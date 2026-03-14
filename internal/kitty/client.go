@@ -139,6 +139,41 @@ func SetTitle(wsName, title string) error {
 	return nil
 }
 
+// LaunchRemote starts a new kitty instance for a remote workspace (no --directory).
+// Returns the PID of the kitty process.
+func LaunchRemote(wsName, title string) (int, error) {
+	socket := SocketPath(wsName)
+
+	cmd := exec.Command("kitty",
+		"--listen-on", "unix:"+socket,
+		"--title", title,
+		"--override", "allow_remote_control=yes",
+	)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+	cmd.Stdin = nil
+
+	env := os.Environ()
+	cleanEnv := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "CLAUDECODE=") {
+			continue
+		}
+		cleanEnv = append(cleanEnv, e)
+	}
+	cmd.Env = cleanEnv
+
+	if err := cmd.Start(); err != nil {
+		return 0, fmt.Errorf("starting kitty: %w", err)
+	}
+
+	pid := cmd.Process.Pid
+	cmd.Process.Release()
+
+	return pid, nil
+}
+
 // KillProcess sends SIGTERM to a kitty process by PID.
 func KillProcess(pid int) error {
 	proc, err := os.FindProcess(pid)

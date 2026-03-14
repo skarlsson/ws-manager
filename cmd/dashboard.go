@@ -14,7 +14,9 @@ import (
 	"github.com/skarlsson/ws-manager/internal/git"
 	"github.com/skarlsson/ws-manager/internal/kitty"
 	"github.com/skarlsson/ws-manager/internal/process"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 	"github.com/skarlsson/ws-manager/internal/state"
+	"github.com/skarlsson/ws-manager/internal/zellij"
 	"github.com/spf13/cobra"
 )
 
@@ -95,12 +97,25 @@ func (m *dashboardModel) refresh() {
 			_ = state.Save(st)
 		}
 		m.entries[i] = workspaceEntry{ws: ws, state: st, claude: "-"}
-		if st.Active {
+		if st.Active && !ws.IsRemote() {
 			wg.Add(1)
 			go func(idx int, session string) {
 				defer wg.Done()
 				m.entries[idx].claude = process.GetClaudeInfo(session).Pretty()
 			}(i, st.ZellijSession)
+		}
+		// Check for detached remote sessions asynchronously
+		if ws.IsRemote() && !st.Active {
+			wg.Add(1)
+			go func(idx int, w config.Workspace) {
+				defer wg.Done()
+				session := zellij.SessionName(w.Name)
+				host, err := config.LoadHost(w.Host)
+				if err == nil && ssh.CheckZellijSession(host.SSH, session) {
+					m.entries[idx].state.Active = false // local kitty not running
+					m.entries[idx].claude = "detached"
+				}
+			}(i, ws)
 		}
 	}
 	wg.Wait()
@@ -221,7 +236,11 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.setMsg(warnStyle, "%s is already active", e.ws.Name)
 			} else {
 				name := e.ws.Name
-				m.setMsg(normalStyle, "Opening %s...", name)
+				suffix := ""
+				if e.ws.IsRemote() && e.claude == "detached" {
+					suffix = " (reattaching)"
+				}
+				m.setMsg(normalStyle, "Opening %s%s...", name, suffix)
 				return m, func() tea.Msg {
 					err := openWorkspace(name)
 					return openDoneMsg{name: name, err: err}
@@ -322,10 +341,11 @@ func (m dashboardModel) View() string {
 	} else {
 		// Build row data first to compute column widths
 		type row struct {
-			name, dir, branch, task, status, claude string
-			isActive                                bool
+			name, dir, branch, task, host, status, claude string
+			isActive, isDetached                          bool
 		}
 		rows := make([]row, len(m.entries))
+		hasRemote := false
 		for i, e := range m.entries {
 			r := row{}
 			r.name = e.ws.Name
@@ -335,39 +355,66 @@ func (m dashboardModel) View() string {
 				r.dir = "~" + r.dir[len(home):]
 			}
 			r.branch = "-"
-			if br, err := git.CurrentBranch(e.ws.Dir); err == nil {
-				r.branch = br
+			if !e.ws.IsRemote() {
+				if br, err := git.CurrentBranch(e.ws.Dir); err == nil {
+					r.branch = br
+				}
 			}
 			r.task = e.ws.CurrentTask
 			if r.task == "" {
 				r.task = "-"
 			}
+			r.host = e.ws.Host
+			if r.host != "" {
+				hasRemote = true
+			}
 			r.isActive = e.state.Active && kitty.IsRunning(e.state.KittyPID)
+			r.isDetached = e.claude == "detached"
 			if r.isActive {
 				r.status = "active"
+			} else if r.isDetached {
+				r.status = "detached"
 			} else {
 				r.status = "inactive"
 			}
-			r.claude = e.claude
+			if r.isDetached {
+				r.claude = "-"
+			} else {
+				r.claude = e.claude
+			}
 			rows[i] = r
 		}
 
-		// Compute column widths (min from headers, max from data)
-		colW := [6]int{4, 3, 6, 4, 6, 6} // min widths from header labels
+		// Compute column widths
+		numCols := 6
+		if hasRemote {
+			numCols = 7
+		}
+		colW := make([]int, numCols)
+		// Min widths from headers
+		if hasRemote {
+			colW = []int{4, 3, 6, 4, 4, 8, 6} // NAME, DIR, BRANCH, TASK, HOST, STATUS, CLAUDE
+		} else {
+			colW = []int{4, 3, 6, 4, 6, 6} // NAME, DIR, BRANCH, TASK, STATUS, CLAUDE
+		}
 		for _, r := range rows {
-			vals := [6]int{len(r.name), len(r.dir), len(r.branch), len(r.task), len(r.status), len(r.claude)}
+			var vals []int
+			if hasRemote {
+				host := r.host
+				if host == "" {
+					host = "local"
+				}
+				vals = []int{len(r.name), len(r.dir), len(r.branch), len(r.task), len(host), len(r.status), len(r.claude)}
+			} else {
+				vals = []int{len(r.name), len(r.dir), len(r.branch), len(r.task), len(r.status), len(r.claude)}
+			}
 			for j, v := range vals {
 				if v > colW[j] {
 					colW[j] = v
 				}
 			}
 		}
-		// Cap dir and branch columns if terminal is narrow
-		maxTotal := m.width - 4 // leave margin
-		if maxTotal < 80 {
-			maxTotal = 80
-		}
-		// Cap individual columns
+		// Cap dir and branch columns
 		if colW[1] > 35 {
 			colW[1] = 35
 		}
@@ -385,33 +432,71 @@ func (m dashboardModel) View() string {
 			return s[:max-3] + "..."
 		}
 
-		fmtStr := fmt.Sprintf("  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%s", colW[0], colW[1], colW[2], colW[3], colW[4])
+		detachedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 
-		b.WriteString(headerStyle.Render(fmt.Sprintf(fmtStr, "NAME", "DIR", "BRANCH", "TASK", "STATUS", "CLAUDE")))
-		b.WriteString("\n")
-
-		for i, r := range rows {
-			statusStr := r.status
-			if r.isActive {
-				statusStr = activeStyle.Render(pad(r.status, colW[4]))
-			} else {
-				statusStr = inactiveStyle.Render(pad(r.status, colW[4]))
-			}
-
-			line := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %s  %s",
-				colW[0], truncate(r.name, colW[0]),
-				colW[1], truncate(r.dir, colW[1]),
-				colW[2], truncate(r.branch, colW[2]),
-				colW[3], truncate(r.task, colW[3]),
-				statusStr,
-				r.claude,
-			)
-			if i == m.cursor {
-				b.WriteString(selectedStyle.Render(line))
-			} else {
-				b.WriteString(normalStyle.Render(line))
-			}
+		if hasRemote {
+			fmtStr := fmt.Sprintf("  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%s", colW[0], colW[1], colW[2], colW[3], colW[4], colW[5])
+			b.WriteString(headerStyle.Render(fmt.Sprintf(fmtStr, "NAME", "DIR", "BRANCH", "TASK", "HOST", "STATUS", "CLAUDE")))
 			b.WriteString("\n")
+
+			for i, r := range rows {
+				host := r.host
+				if host == "" {
+					host = "local"
+				}
+				var statusStr string
+				if r.isActive {
+					statusStr = activeStyle.Render(pad(r.status, colW[5]))
+				} else if r.isDetached {
+					statusStr = detachedStyle.Render(pad(r.status, colW[5]))
+				} else {
+					statusStr = inactiveStyle.Render(pad(r.status, colW[5]))
+				}
+
+				line := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %-*s  %s  %s",
+					colW[0], truncate(r.name, colW[0]),
+					colW[1], truncate(r.dir, colW[1]),
+					colW[2], truncate(r.branch, colW[2]),
+					colW[3], truncate(r.task, colW[3]),
+					colW[4], truncate(host, colW[4]),
+					statusStr,
+					r.claude,
+				)
+				if i == m.cursor {
+					b.WriteString(selectedStyle.Render(line))
+				} else {
+					b.WriteString(normalStyle.Render(line))
+				}
+				b.WriteString("\n")
+			}
+		} else {
+			fmtStr := fmt.Sprintf("  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%-%ds  %%s", colW[0], colW[1], colW[2], colW[3], colW[4])
+			b.WriteString(headerStyle.Render(fmt.Sprintf(fmtStr, "NAME", "DIR", "BRANCH", "TASK", "STATUS", "CLAUDE")))
+			b.WriteString("\n")
+
+			for i, r := range rows {
+				statusStr := r.status
+				if r.isActive {
+					statusStr = activeStyle.Render(pad(r.status, colW[4]))
+				} else {
+					statusStr = inactiveStyle.Render(pad(r.status, colW[4]))
+				}
+
+				line := fmt.Sprintf("  %-*s  %-*s  %-*s  %-*s  %s  %s",
+					colW[0], truncate(r.name, colW[0]),
+					colW[1], truncate(r.dir, colW[1]),
+					colW[2], truncate(r.branch, colW[2]),
+					colW[3], truncate(r.task, colW[3]),
+					statusStr,
+					r.claude,
+				)
+				if i == m.cursor {
+					b.WriteString(selectedStyle.Render(line))
+				} else {
+					b.WriteString(normalStyle.Render(line))
+				}
+				b.WriteString("\n")
+			}
 		}
 	}
 

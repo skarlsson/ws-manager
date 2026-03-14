@@ -10,6 +10,7 @@ import (
 
 	"github.com/skarlsson/ws-manager/internal/config"
 	"github.com/skarlsson/ws-manager/internal/git"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -19,6 +20,22 @@ var newCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.EnsureDirs(); err != nil {
 			return err
+		}
+
+		hostFlag, _ := cmd.Flags().GetString("host")
+		nonInteractive, _ := cmd.Flags().GetBool("non-interactive")
+		nameFlag, _ := cmd.Flags().GetString("name")
+		dirFlag, _ := cmd.Flags().GetString("dir")
+		gitURLFlag, _ := cmd.Flags().GetString("git-url")
+
+		// Non-interactive mode (for remote setup via SSH)
+		if nonInteractive {
+			return createWorkspaceNonInteractive(nameFlag, dirFlag, gitURLFlag, hostFlag)
+		}
+
+		// Remote workspace creation
+		if hostFlag != "" {
+			return createRemoteWorkspace(cmd, hostFlag)
 		}
 
 		reader := bufio.NewReader(os.Stdin)
@@ -132,6 +149,133 @@ var newCmd = &cobra.Command{
 	},
 }
 
+func createWorkspaceNonInteractive(name, dir, gitURL, host string) error {
+	if name == "" {
+		return fmt.Errorf("--name is required in non-interactive mode")
+	}
+	if dir == "" {
+		return fmt.Errorf("--dir is required in non-interactive mode")
+	}
+
+	if config.WorkspaceExists(name) {
+		fmt.Printf("Workspace %q already exists, skipping\n", name)
+		return nil
+	}
+
+	// Clone if git URL provided and dir doesn't exist
+	if gitURL != "" {
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			fmt.Printf("Cloning %s into %s...\n", gitURL, dir)
+			clone := exec.Command("git", "clone", "--recursive", gitURL, dir)
+			clone.Stdout = os.Stdout
+			clone.Stderr = os.Stderr
+			if err := clone.Run(); err != nil {
+				return fmt.Errorf("cloning repo: %w", err)
+			}
+		}
+	} else {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("creating directory: %w", err)
+		}
+	}
+
+	defaultBranch := "main"
+	if git.IsGitRepo(dir) {
+		defaultBranch = git.DefaultBranch(dir)
+	}
+
+	ws := config.Workspace{
+		Name:          name,
+		Dir:           dir,
+		DefaultBranch: defaultBranch,
+		Layout:        "default",
+		AutoClaude:    true,
+		Host:          host,
+	}
+
+	if err := config.SaveWorkspace(ws); err != nil {
+		return fmt.Errorf("saving workspace: %w", err)
+	}
+	fmt.Printf("Workspace %q created\n", name)
+	return nil
+}
+
+func createRemoteWorkspace(cmd *cobra.Command, hostName string) error {
+	host, err := config.LoadHost(hostName)
+	if err != nil {
+		return err
+	}
+
+	reader := bufio.NewReader(os.Stdin)
+	prompt := func(label, defaultVal string) string {
+		if defaultVal != "" {
+			fmt.Printf("%s [%s]: ", label, defaultVal)
+		} else {
+			fmt.Printf("%s: ", label)
+		}
+		input, _ := reader.ReadString('\n')
+		input = strings.TrimSpace(input)
+		if input == "" {
+			return defaultVal
+		}
+		return input
+	}
+
+	name := prompt("Workspace name", "")
+	if name == "" {
+		return fmt.Errorf("workspace name is required")
+	}
+	if config.WorkspaceExists(name) {
+		return fmt.Errorf("workspace %q already exists", name)
+	}
+
+	defaultDir := ""
+	if host.WorkspaceDir != "" {
+		defaultDir = host.WorkspaceDir + "/" + name
+	}
+	dir := prompt("Remote directory", defaultDir)
+	if dir == "" {
+		return fmt.Errorf("remote directory is required")
+	}
+
+	gitURL := prompt("Git repo URL (empty for existing dir)", "")
+
+	// Create local workspace config with Host field
+	ws := config.Workspace{
+		Name:       name,
+		Dir:        dir,
+		Layout:     "default",
+		AutoClaude: true,
+		Host:       hostName,
+	}
+	if err := config.SaveWorkspace(ws); err != nil {
+		return fmt.Errorf("saving local workspace config: %w", err)
+	}
+
+	// Create workspace on remote via SSH
+	fmt.Printf("Creating workspace on %s...\n", hostName)
+	remoteArgs := fmt.Sprintf("~/.local/bin/ws new --non-interactive --name %s --dir %s", name, dir)
+	if gitURL != "" {
+		remoteArgs += fmt.Sprintf(" --git-url %s", gitURL)
+	}
+	out, err := ssh.Run(host.SSH, remoteArgs)
+	if err != nil {
+		fmt.Printf("Warning: remote workspace creation failed: %v\n", err)
+		fmt.Println("You may need to create it manually on the remote.")
+	} else {
+		fmt.Println(out)
+	}
+
+	fmt.Printf("\nWorkspace %q created (remote: %s)\n", name, hostName)
+	fmt.Printf("Open it with: ws open %s\n", name)
+	return nil
+}
+
 func init() {
+	newCmd.Flags().String("host", "", "Create workspace on a remote host")
+	newCmd.Flags().Bool("non-interactive", false, "Non-interactive mode (for programmatic use)")
+	newCmd.Flags().String("name", "", "Workspace name (non-interactive mode)")
+	newCmd.Flags().String("dir", "", "Workspace directory (non-interactive mode)")
+	newCmd.Flags().String("git-url", "", "Git repo URL to clone (non-interactive mode)")
 	rootCmd.AddCommand(newCmd)
 }

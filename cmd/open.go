@@ -9,6 +9,7 @@ import (
 	"github.com/skarlsson/ws-manager/internal/config"
 	"github.com/skarlsson/ws-manager/internal/git"
 	"github.com/skarlsson/ws-manager/internal/kitty"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 	"github.com/skarlsson/ws-manager/internal/state"
 	"github.com/skarlsson/ws-manager/internal/zellij"
 	"github.com/spf13/cobra"
@@ -19,6 +20,10 @@ func openWorkspace(name string) error {
 	ws, err := config.LoadWorkspace(name)
 	if err != nil {
 		return fmt.Errorf("workspace %q not found: %w", name, err)
+	}
+
+	if ws.IsRemote() {
+		return openRemoteWorkspace(name, ws)
 	}
 
 	// Check if already active
@@ -68,6 +73,56 @@ func openWorkspace(name string) error {
 		KittyPID:      pid,
 		ZellijSession: session,
 		Active:        true,
+	}
+	if err := state.Save(st); err != nil {
+		return fmt.Errorf("saving state: %w", err)
+	}
+
+	return nil
+}
+
+// openRemoteWorkspace opens a remote workspace: local kitty + SSH to remote ws attach.
+func openRemoteWorkspace(name string, ws config.Workspace) error {
+	host, err := config.LoadHost(ws.Host)
+	if err != nil {
+		return fmt.Errorf("loading host %q: %w", ws.Host, err)
+	}
+
+	// Check if local kitty is already running
+	st, _ := state.Load(name)
+	if st.Active && kitty.IsRunning(st.KittyPID) {
+		return fmt.Errorf("workspace %q is already open (PID %d)", name, st.KittyPID)
+	}
+
+	session := zellij.SessionName(name)
+
+	// Launch kitty without --directory (workspace dir is on remote)
+	title := fmt.Sprintf("ws: %s [%s]", name, host.Name)
+	pid, err := kitty.LaunchRemote(name, title)
+	if err != nil {
+		return fmt.Errorf("launching kitty: %w", err)
+	}
+
+	// Wait for kitty socket
+	socket := kitty.SocketPath(name)
+	if err := waitForSocket(socket, 5*time.Second); err != nil {
+		fmt.Printf("Warning: kitty socket not ready: %v\n", err)
+	}
+
+	// Send SSH command that runs ws attach on remote
+	sshCmd := ssh.InteractiveCommand(host.SSH, fmt.Sprintf("~/.local/bin/ws attach %s", name))
+	if err := kitty.SendText(socket, sshCmd); err != nil {
+		fmt.Printf("Warning: could not send SSH command: %v\n", err)
+	}
+
+	// Save state
+	st = state.WorkspaceState{
+		Name:          name,
+		KittyPID:      pid,
+		ZellijSession: session,
+		Active:        true,
+		Remote:        true,
+		Host:          ws.Host,
 	}
 	if err := state.Save(st); err != nil {
 		return fmt.Errorf("saving state: %w", err)

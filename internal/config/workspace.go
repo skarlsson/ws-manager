@@ -18,7 +18,10 @@ type Workspace struct {
 	AutoClaude    bool     `yaml:"auto_claude"`
 	SetupCommands []string `yaml:"setup_commands,omitempty"`
 	Skills        []string `yaml:"skills,omitempty"`
+	Host          string   `yaml:"host,omitempty"` // references hosts.yaml entry for remote workspaces
 }
+
+func (w Workspace) IsRemote() bool { return w.Host != "" }
 
 func DefaultWorkspace(name, dir string) Workspace {
 	return Workspace{
@@ -89,6 +92,9 @@ func (w Workspace) Validate() error {
 	}
 	if w.Layout == "" {
 		return fmt.Errorf("workspace layout is required")
+	}
+	if w.Host != "" && !HostExists(w.Host) {
+		return fmt.Errorf("host %q not found in hosts.yaml", w.Host)
 	}
 	return nil
 }

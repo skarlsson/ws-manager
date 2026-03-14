@@ -18,6 +18,8 @@ type WorkspaceState struct {
 	HomeX         int    `yaml:"home_x"`        // original window X position
 	HomeY         int    `yaml:"home_y"`        // original window Y position
 	HomeCaptured  bool   `yaml:"home_captured"` // true once positions are captured
+	Remote        bool   `yaml:"remote,omitempty"`
+	Host          string `yaml:"host,omitempty"`
 }
 
 func stateDir() string {

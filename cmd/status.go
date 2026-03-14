@@ -9,7 +9,9 @@ import (
 	"github.com/skarlsson/ws-manager/internal/git"
 	"github.com/skarlsson/ws-manager/internal/kitty"
 	"github.com/skarlsson/ws-manager/internal/process"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 	"github.com/skarlsson/ws-manager/internal/state"
+	"github.com/skarlsson/ws-manager/internal/zellij"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,8 @@ type WorkspaceStatus struct {
 	Claude     bool   `json:"claude"`
 	ClaudeCPU  int64  `json:"claude_cpu_secs"`
 	ClaudeTime string `json:"claude_cpu_time,omitempty"`
+	Host       string `json:"host,omitempty"`
+	Detached   bool   `json:"detached,omitempty"`
 }
 
 var statusCmd = &cobra.Command{
@@ -66,8 +70,10 @@ func getWorkspaceStatus(name, focused string) (WorkspaceStatus, error) {
 	active := st.Active && kitty.IsRunning(st.KittyPID)
 
 	branch := "-"
-	if b, err := git.CurrentBranch(ws.Dir); err == nil {
-		branch = b
+	if !ws.IsRemote() {
+		if b, err := git.CurrentBranch(ws.Dir); err == nil {
+			branch = b
+		}
 	}
 
 	s := WorkspaceStatus{
@@ -77,9 +83,21 @@ func getWorkspaceStatus(name, focused string) (WorkspaceStatus, error) {
 		Task:    ws.CurrentTask,
 		Active:  active,
 		Focused: name == focused,
+		Host:    ws.Host,
 	}
 
-	if active {
+	if ws.IsRemote() {
+		// Check if remote zellij session is running but no local kitty
+		session := zellij.SessionName(name)
+		if !active && ws.Host != "" {
+			host, err := config.LoadHost(ws.Host)
+			if err == nil && ssh.CheckZellijSession(host.SSH, session) {
+				s.Detached = true
+			}
+		}
+	}
+
+	if active && !ws.IsRemote() {
 		ci := process.GetClaudeInfo(st.ZellijSession)
 		s.Claude = ci.Running
 		s.ClaudeCPU = ci.CPUSecs
