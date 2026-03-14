@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/skarlsson/ws-manager/internal/deps"
 )
 
 func SocketPath(wsName string) string {
@@ -72,7 +74,11 @@ func Launch(wsName, cwd, title string) (int, error) {
 		return 0, fmt.Errorf("starting kitty: %w", err)
 	}
 
-	return cmd.Process.Pid, nil
+	pid := cmd.Process.Pid
+	// Release the process so init adopts it — no zombies
+	cmd.Process.Release()
+
+	return pid, nil
 }
 
 // PlatformWindowID returns the X11/XWayland window ID for a workspace's kitty instance.
@@ -94,6 +100,9 @@ func PlatformWindowID(wsName string) (int, error) {
 
 // Activate raises and focuses a workspace's kitty window using xdotool.
 func Activate(wsName string) error {
+	if !deps.HasTool("xdotool") {
+		return fmt.Errorf("xdotool not found in PATH (required for window activation)")
+	}
 	winID, err := PlatformWindowID(wsName)
 	if err != nil {
 		return err
@@ -113,7 +122,11 @@ func SendText(socket string, text string) error {
 
 // SetTitle sets the OS window title for a workspace's kitty instance
 // by setting _NET_WM_NAME via xprop (zellij intercepts escape sequences).
+// Silently skips if xprop is not available (cosmetic feature).
 func SetTitle(wsName, title string) error {
+	if !deps.HasTool("xprop") {
+		return nil
+	}
 	winID, err := PlatformWindowID(wsName)
 	if err != nil {
 		return err
@@ -140,10 +153,16 @@ func IsRunning(pid int) bool {
 	if pid <= 0 {
 		return false
 	}
-	proc, err := os.FindProcess(pid)
+	// Check /proc status to detect zombies — kill -0 succeeds on zombies
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err != nil {
 		return false
 	}
-	err = proc.Signal(syscall.Signal(0))
-	return err == nil
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "State:") {
+			// Z = zombie, X = dead
+			return !strings.Contains(line, "Z") && !strings.Contains(line, "X")
+		}
+	}
+	return false
 }
