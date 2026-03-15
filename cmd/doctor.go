@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/skarlsson/ws-manager/internal/deps"
+	"github.com/skarlsson/workshell/internal/deps"
 	"github.com/spf13/cobra"
 )
 

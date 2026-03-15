@@ -11,7 +11,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/skarlsson/ws-manager/internal/deps"
+	"github.com/skarlsson/workshell/internal/deps"
 )
 
 func SocketPath(wsName string) string {

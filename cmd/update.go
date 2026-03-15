@@ -15,7 +15,7 @@ var updateCmd = &cobra.Command{
 	Short: "Update ws to the latest release from GitHub",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		suffix := runtime.GOOS + "-" + runtime.GOARCH
-		url := "https://github.com/skarlsson/ws-manager/releases/latest/download/ws-" + suffix
+		url := "https://github.com/skarlsson/workshell/releases/latest/download/ws-" + suffix
 
 		self, err := os.Executable()
 		if err != nil {

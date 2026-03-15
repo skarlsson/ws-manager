@@ -10,7 +10,7 @@ func TestParseWorkspaceRef(t *testing.T) {
 	}{
 		{"myws", "", "myws"},
 		{"host:name", "host", "name"},
-		{"clawdbot1:ws-manager", "clawdbot1", "ws-manager"},
+		{"clawdbot1:workshell", "clawdbot1", "workshell"},
 		{"h:complex-name-here", "h", "complex-name-here"},
 		{":leading-colon", "", ":leading-colon"}, // colon at pos 0 → no host
 	}
@@ -36,7 +36,7 @@ func TestStateKey(t *testing.T) {
 	}{
 		{"", "myws", "myws"},
 		{"host", "name", "host@name"},
-		{"clawdbot1", "ws-manager", "clawdbot1@ws-manager"},
+		{"clawdbot1", "workshell", "clawdbot1@workshell"},
 	}
 
 	for _, tt := range tests {

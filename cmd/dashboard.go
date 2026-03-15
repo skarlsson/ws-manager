@@ -11,14 +11,14 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/deps"
-	"github.com/skarlsson/ws-manager/internal/git"
-	"github.com/skarlsson/ws-manager/internal/kitty"
-	"github.com/skarlsson/ws-manager/internal/process"
-	"github.com/skarlsson/ws-manager/internal/ssh"
-	"github.com/skarlsson/ws-manager/internal/state"
-	"github.com/skarlsson/ws-manager/internal/zellij"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/deps"
+	"github.com/skarlsson/workshell/internal/git"
+	"github.com/skarlsson/workshell/internal/kitty"
+	"github.com/skarlsson/workshell/internal/process"
+	"github.com/skarlsson/workshell/internal/ssh"
+	"github.com/skarlsson/workshell/internal/state"
+	"github.com/skarlsson/workshell/internal/zellij"
 	"github.com/spf13/cobra"
 )
 
@@ -539,7 +539,7 @@ func (m dashboardModel) View() string {
 
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render("ws-manager dashboard"))
+	b.WriteString(titleStyle.Render("workshell dashboard"))
 	b.WriteString("\n\n")
 
 	if len(m.entries) == 0 {
@@ -727,7 +727,7 @@ func deleteWorkspace(e workspaceEntry) error {
 		if err != nil {
 			return err
 		}
-		delCmd := fmt.Sprintf("export PATH=\"$HOME/.local/bin:$PATH\" && rm -f ~/.config/ws-manager/workspaces/%s.yaml", e.ws.Name)
+		delCmd := fmt.Sprintf("export PATH=\"$HOME/.local/bin:$PATH\" && rm -f ~/.config/workshell/workspaces/%s.yaml", e.ws.Name)
 		if _, err := ssh.Run(host.SSH, delCmd); err != nil {
 			return fmt.Errorf("remote delete: %w", err)
 		}

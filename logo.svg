@@ -1,0 +1,70 @@
+<svg width="480" height="480" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .shell-body { fill: #1a2a2a; stroke: #1FCFA0; }
+    .shell-screen { fill: #0d1f1f; }
+    .prompt-text { fill: #1FCFA0; }
+    .prompt-cursor { fill: #1FCFA0; }
+    .crab-body { fill: #7a1a10; stroke: #E24B4A; }
+    .crab-leg { stroke: #E24B4A; }
+    .claw-fill { fill: #E24B4A; }
+    .eye-dot { fill: #E24B4A; }
+    .antenna { stroke: #E24B4A; }
+    .badge-text { fill: #9FE1CB; }
+  </style>
+
+  <!-- TERMINAL SHELL -->
+  <g transform="translate(240, 190)">
+    <rect class="shell-body" x="-90" y="-68" width="180" height="136" rx="18" stroke-width="2.5"/>
+    <rect class="shell-screen" x="-76" y="-54" width="152" height="88" rx="8"/>
+    <!-- Titlebar dots -->
+    <circle cx="-58" cy="-45" r="3.5" fill="#e05555" opacity="0.85"/>
+    <circle cx="-46" cy="-45" r="3.5" fill="#e0b555" opacity="0.85"/>
+    <circle cx="-34" cy="-45" r="3.5" fill="#55c065" opacity="0.85"/>
+    <!-- Prompt -->
+    <text class="prompt-text" x="-62" y="-12" font-family="monospace" font-size="22" font-weight="700" letter-spacing="1">&gt;_</text>
+    <rect class="prompt-cursor" x="-20" y="-30" width="11" height="22" rx="2" opacity="0.7"/>
+  </g>
+
+  <!-- CRAB BODY -->
+  <g transform="translate(240, 300)">
+    <ellipse class="crab-body" cx="0" cy="0" rx="52" ry="32" stroke-width="2"/>
+    <!-- Eye stalks -->
+    <line class="antenna" x1="-22" y1="-18" x2="-34" y2="-36" stroke-width="2.5" stroke-linecap="round"/>
+    <line class="antenna" x1="22" y1="-18" x2="34" y2="-36" stroke-width="2.5" stroke-linecap="round"/>
+    <circle class="eye-dot" cx="-34" cy="-38" r="5.5"/>
+    <circle class="eye-dot" cx="34" cy="-38" r="5.5"/>
+    <circle fill="white" cx="-36" cy="-40" r="1.8" opacity="0.7"/>
+    <circle fill="white" cx="32" cy="-40" r="1.8" opacity="0.7"/>
+  </g>
+
+  <!-- LEFT LEGS -->
+  <g class="crab-leg" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <polyline points="195,308 168,298 158,312"/>
+    <polyline points="193,318 162,320 150,336"/>
+    <polyline points="195,328 170,340 165,356"/>
+  </g>
+  <!-- RIGHT LEGS -->
+  <g class="crab-leg" stroke-width="2.2" stroke-linecap="round" fill="none">
+    <polyline points="285,308 312,298 322,312"/>
+    <polyline points="287,318 318,320 330,336"/>
+    <polyline points="285,328 310,340 315,356"/>
+  </g>
+
+  <!-- LEFT CLAW -->
+  <g transform="translate(162, 288)">
+    <line class="crab-leg" x1="0" y1="0" x2="-30" y2="-18" stroke-width="2.5" stroke-linecap="round"/>
+    <path class="claw-fill" d="M-30,-18 Q-52,-32 -46,-14 Q-42,-6 -30,-10 Z"/>
+    <path class="claw-fill" d="M-30,-18 Q-52,-4 -44,6 Q-38,12 -30,-8 Z"/>
+    <line stroke="white" x1="-46" y1="-14" x2="-44" y2="4" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  </g>
+  <!-- RIGHT CLAW -->
+  <g transform="translate(318, 288)">
+    <line class="crab-leg" x1="0" y1="0" x2="30" y2="-18" stroke-width="2.5" stroke-linecap="round"/>
+    <path class="claw-fill" d="M30,-18 Q52,-32 46,-14 Q42,-6 30,-10 Z"/>
+    <path class="claw-fill" d="M30,-18 Q52,-4 44,6 Q38,12 30,-8 Z"/>
+    <line stroke="white" x1="46" y1="-14" x2="44" y2="4" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  </g>
+
+  <!-- WORDMARK -->
+  <text class="badge-text" x="240" y="418" text-anchor="middle" font-family="monospace" font-size="20" font-weight="700" letter-spacing="3" opacity="0.85">workshell</text>
+</svg>

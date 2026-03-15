@@ -1,6 +1,6 @@
 package main
 
-import "github.com/skarlsson/ws-manager/cmd"
+import "github.com/skarlsson/workshell/cmd"
 
 func main() {
 	cmd.Execute()

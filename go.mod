@@ -1,4 +1,4 @@
-module github.com/skarlsson/ws-manager
+module github.com/skarlsson/workshell
 
 go 1.24.2
 

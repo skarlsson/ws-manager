@@ -1,4 +1,8 @@
-# ws-manager
+<p align="center">
+  <img src="logo.svg" width="200" alt="workshell logo">
+</p>
+
+# workshell
 
 CLI tool that orchestrates **kitty** sessions, **zellij** layouts, and **git** branches to manage multiple AI-assisted development workspaces.
 
@@ -21,11 +25,14 @@ No kitty configuration needed. `ws open` launches its own kitty instances with r
 ## Install
 
 ```bash
-# Install Go (if needed)
-bash install_deps.sh
-
 # Build and install to ~/.local/bin/ws
 bash build.sh install
+```
+
+Or download a release binary:
+
+```bash
+ws update   # self-update to latest GitHub release
 ```
 
 ## Usage
@@ -38,7 +45,7 @@ Interactive wizard:
 ws new
 ```
 
-Or create `~/.config/ws-manager/workspaces/<name>.yaml` directly:
+Or create `~/.config/workshell/workspaces/<name>.yaml` directly:
 
 ```yaml
 name: myproject
@@ -61,6 +68,16 @@ ws list              # show all workspaces and status
 
 `ws open` launches a kitty OS window, starts zellij with the workspace layout, and (if `auto_claude: true`) runs claude in the left pane.
 
+### Remote workspaces
+
+```bash
+ws open clawdbot1:myproject   # open workspace on remote host via SSH
+ws detach clawdbot1:myproject # detach (keeps zellij session running)
+ws attach clawdbot1:myproject # reattach to detached session
+```
+
+Remote hosts are configured in `~/.config/workshell/hosts.yaml` or via the dashboard settings menu.
+
 ### Task management
 
 Tasks map to git branches with the `task/` prefix:
@@ -82,7 +99,7 @@ ws task start foo -w myproject
 
 ### Monitor rotation (GNOME/Wayland)
 
-Configure your work monitor in `~/.config/ws-manager/config.yaml`:
+Configure your work monitor in `~/.config/workshell/config.yaml`:
 
 ```yaml
 work_monitor: DP-1
@@ -123,7 +140,18 @@ This configures:
 ws dashboard
 ```
 
-TUI with keyboard navigation (`j`/`k` to move, `o` to open, `r` to refresh, `q` to quit).
+TUI with keyboard navigation:
+
+```
+↑/↓: navigate  Enter: open  n: new  t: tasks  d: detach  x: kill  D: delete  s: settings  Esc: quit
+```
+
+### Dependencies
+
+```bash
+ws deps check     # show status of required/optional tools
+ws deps install   # install missing dependencies
+```
 
 ## Default Zellij Layout
 
@@ -137,16 +165,17 @@ TUI with keyboard navigation (`j`/`k` to move, `o` to open, `r` to refresh, `q` 
 
 Set `auto_claude: false` in workspace config to get an editor pane instead.
 
-Custom layouts can be placed in `~/.config/ws-manager/layouts/`.
+Custom layouts can be placed in `~/.config/workshell/layouts/`.
 
 ## File Locations
 
 | Path | Purpose |
 |------|---------|
-| `~/.config/ws-manager/config.yaml` | Global config (default layout, work monitor) |
-| `~/.config/ws-manager/workspaces/` | Workspace configs |
-| `~/.config/ws-manager/layouts/` | Zellij layout files |
-| `~/.local/state/ws-manager/` | Runtime state (window IDs, session names) |
+| `~/.config/workshell/config.yaml` | Global config (default layout, work monitor) |
+| `~/.config/workshell/hosts.yaml` | Remote host definitions |
+| `~/.config/workshell/workspaces/` | Workspace configs |
+| `~/.config/workshell/layouts/` | Zellij layout files |
+| `~/.local/state/workshell/` | Runtime state (window IDs, session names) |
 
 ## Building
 

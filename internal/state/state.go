@@ -28,7 +28,7 @@ func stateDir() string {
 	if dir == "" {
 		dir = filepath.Join(os.Getenv("HOME"), ".local", "state")
 	}
-	return filepath.Join(dir, "ws-manager")
+	return filepath.Join(dir, "workshell")
 }
 
 func statePath(name string) string {
@@ -187,7 +187,7 @@ func workspaceConfigExists(name string) bool {
 	if dir == "" {
 		dir = filepath.Join(os.Getenv("HOME"), ".config")
 	}
-	path := filepath.Join(dir, "ws-manager", "workspaces", name+".yaml")
+	path := filepath.Join(dir, "workshell", "workspaces", name+".yaml")
 	_, err := os.Stat(path)
 	return err == nil
 }

@@ -9,8 +9,8 @@ import (
 
 var rootCmd = &cobra.Command{
 	Use:   "ws",
-	Short: "Workspace manager for AI agent workflows",
-	Long:  "ws-manager orchestrates kitty sessions, zellij layouts, and git branches to manage multiple AI-assisted development workspaces.",
+	Short: "workshell - AI agent workspace orchestrator",
+	Long:  "workshell orchestrates kitty sessions, zellij layouts, and git branches to manage multiple AI-assisted development workspaces.",
 }
 
 func Execute() {

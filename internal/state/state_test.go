@@ -11,15 +11,15 @@ func setupTestDirs(t *testing.T) (stateDir, configDir string) {
 	t.Helper()
 	tmp := t.TempDir()
 	sd := filepath.Join(tmp, "state")
-	cd := filepath.Join(tmp, "config", "ws-manager", "workspaces")
+	cd := filepath.Join(tmp, "config", "workshell", "workspaces")
 	os.MkdirAll(sd, 0755)
 	os.MkdirAll(cd, 0755)
 	t.Setenv("XDG_STATE_HOME", filepath.Join(tmp, "state", ".."))
-	// stateDir() uses XDG_STATE_HOME + "ws-manager", so set it one level up
+	// stateDir() uses XDG_STATE_HOME + "workshell", so set it one level up
 	t.Setenv("XDG_STATE_HOME", tmp)
-	// We need stateDir() to return sd — but stateDir appends "ws-manager"
-	// So create the ws-manager subdir
-	wsStateDir := filepath.Join(tmp, "ws-manager")
+	// We need stateDir() to return sd — but stateDir appends "workshell"
+	// So create the workshell subdir
+	wsStateDir := filepath.Join(tmp, "workshell")
 	os.MkdirAll(wsStateDir, 0755)
 	t.Setenv("XDG_STATE_HOME", tmp)
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "config"))

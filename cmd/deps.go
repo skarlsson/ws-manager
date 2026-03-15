@@ -3,13 +3,13 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/skarlsson/ws-manager/internal/deps"
+	"github.com/skarlsson/workshell/internal/deps"
 	"github.com/spf13/cobra"
 )
 
 var depsCmd = &cobra.Command{
 	Use:   "deps",
-	Short: "Manage ws-manager dependencies",
+	Short: "Manage workshell dependencies",
 }
 
 var depsInstallCmd = &cobra.Command{

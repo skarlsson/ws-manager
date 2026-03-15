@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Setup GNOME custom keybindings for ws-manager
+# Setup GNOME custom keybindings for workshell
 # super+r  → rotate workspaces
 # super+u  → unfocus (send current workspace back to home position)
 

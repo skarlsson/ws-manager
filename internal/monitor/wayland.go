@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/skarlsson/ws-manager/internal/deps"
+	"github.com/skarlsson/workshell/internal/deps"
 )
 
 type MonitorInfo struct {

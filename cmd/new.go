@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/git"
-	"github.com/skarlsson/ws-manager/internal/ssh"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/git"
+	"github.com/skarlsson/workshell/internal/ssh"
 	"github.com/spf13/cobra"
 )
 

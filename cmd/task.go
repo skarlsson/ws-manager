@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/git"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/git"
 	"github.com/spf13/cobra"
 )
 
@@ -31,7 +31,7 @@ var taskStartCmd = &cobra.Command{
 		// Auto-stash if dirty
 		if dirty, _ := git.HasChanges(ws.Dir); dirty {
 			fmt.Println("Stashing uncommitted changes...")
-			if err := git.StashPush(ws.Dir, "ws-manager: before task "+taskName); err != nil {
+			if err := git.StashPush(ws.Dir, "workshell: before task "+taskName); err != nil {
 				return fmt.Errorf("stashing changes: %w", err)
 			}
 		}
@@ -77,7 +77,7 @@ var taskDoneCmd = &cobra.Command{
 		// Auto-stash if dirty
 		if dirty, _ := git.HasChanges(ws.Dir); dirty {
 			fmt.Println("Stashing uncommitted changes...")
-			if err := git.StashPush(ws.Dir, "ws-manager: finishing task "+ws.CurrentTask); err != nil {
+			if err := git.StashPush(ws.Dir, "workshell: finishing task "+ws.CurrentTask); err != nil {
 				return fmt.Errorf("stashing changes: %w", err)
 			}
 		}
@@ -158,7 +158,7 @@ var taskSwitchCmd = &cobra.Command{
 		// Auto-stash if dirty
 		if dirty, _ := git.HasChanges(ws.Dir); dirty {
 			fmt.Println("Stashing uncommitted changes...")
-			if err := git.StashPush(ws.Dir, "ws-manager: switching to "+taskName); err != nil {
+			if err := git.StashPush(ws.Dir, "workshell: switching to "+taskName); err != nil {
 				return fmt.Errorf("stashing changes: %w", err)
 			}
 		}

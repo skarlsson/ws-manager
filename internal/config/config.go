@@ -32,7 +32,7 @@ func ConfigDir() string {
 	if err != nil {
 		dir = filepath.Join(os.Getenv("HOME"), ".config")
 	}
-	return filepath.Join(dir, "ws-manager")
+	return filepath.Join(dir, "workshell")
 }
 
 func WorkspacesDir() string {

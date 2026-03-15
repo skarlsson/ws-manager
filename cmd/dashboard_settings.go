@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/deps"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/deps"
 )
 
 type settingsStep int

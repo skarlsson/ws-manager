@@ -7,8 +7,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/ssh"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/ssh"
 	"github.com/spf13/cobra"
 )
 
@@ -131,7 +131,7 @@ var remoteSetupCmd = &cobra.Command{
 		if !installed {
 			fmt.Print("  Installing via GitHub release... ")
 			dlCmd := fmt.Sprintf(
-				"mkdir -p ~/.local/bin && curl -fsSL -L https://github.com/skarlsson/ws-manager/releases/latest/download/ws-linux-%s -o ~/.local/bin/ws && chmod +x ~/.local/bin/ws",
+				"mkdir -p ~/.local/bin && curl -fsSL -L https://github.com/skarlsson/workshell/releases/latest/download/ws-linux-%s -o ~/.local/bin/ws && chmod +x ~/.local/bin/ws",
 				goarch,
 			)
 			if _, err := ssh.Run(host.SSH, dlCmd); err != nil {

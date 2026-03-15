@@ -5,7 +5,7 @@ export PATH=$PATH:/usr/local/go/bin
 
 VERSION="${VERSION:-$(git describe --tags --always --dirty 2>/dev/null || echo "dev")}"
 BUILD_TIME=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-LDFLAGS="-s -w -X github.com/skarlsson/ws-manager/cmd.Version=${VERSION} -X github.com/skarlsson/ws-manager/cmd.BuildTime=${BUILD_TIME}"
+LDFLAGS="-s -w -X github.com/skarlsson/workshell/cmd.Version=${VERSION} -X github.com/skarlsson/workshell/cmd.BuildTime=${BUILD_TIME}"
 
 echo "Building ws ${VERSION}..."
 go build -ldflags "${LDFLAGS}" -o ws .

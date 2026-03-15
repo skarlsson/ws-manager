@@ -15,7 +15,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("ws-manager %s (built %s)\n", Version, BuildTime)
+		fmt.Printf("workshell %s (built %s)\n", Version, BuildTime)
 	},
 }
 

@@ -6,9 +6,9 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/git"
-	"github.com/skarlsson/ws-manager/internal/ssh"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/git"
+	"github.com/skarlsson/workshell/internal/ssh"
 )
 
 type taskDoneMsg struct {
@@ -354,7 +354,7 @@ func doTaskSwitch(wsName, wsDir, task string) taskDoneMsg {
 	}
 
 	if dirty, _ := git.HasChanges(wsDir); dirty {
-		if err := git.StashPush(wsDir, "ws-manager: switching to "+task); err != nil {
+		if err := git.StashPush(wsDir, "workshell: switching to "+task); err != nil {
 			return taskDoneMsg{err: fmt.Errorf("stash: %w", err)}
 		}
 	}
@@ -380,7 +380,7 @@ func doTaskStart(wsName, wsDir, task string) taskDoneMsg {
 	branch := "task/" + task
 
 	if dirty, _ := git.HasChanges(wsDir); dirty {
-		if err := git.StashPush(wsDir, "ws-manager: before task "+task); err != nil {
+		if err := git.StashPush(wsDir, "workshell: before task "+task); err != nil {
 			return taskDoneMsg{err: fmt.Errorf("stash: %w", err)}
 		}
 	}
@@ -419,7 +419,7 @@ func doTaskDone(wsName, wsDir string) taskDoneMsg {
 	}
 
 	if dirty, _ := git.HasChanges(wsDir); dirty {
-		if err := git.StashPush(wsDir, "ws-manager: finishing task "+ws.CurrentTask); err != nil {
+		if err := git.StashPush(wsDir, "workshell: finishing task "+ws.CurrentTask); err != nil {
 			return taskDoneMsg{err: fmt.Errorf("stash: %w", err)}
 		}
 	}

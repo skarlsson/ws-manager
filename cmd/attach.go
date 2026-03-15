@@ -7,8 +7,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/zellij"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/zellij"
 	"github.com/spf13/cobra"
 )
 

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/skarlsson/ws-manager/internal/config"
+	"github.com/skarlsson/workshell/internal/config"
 )
 
 const defaultLayoutTemplate = `layout {

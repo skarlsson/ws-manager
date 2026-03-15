@@ -3,11 +3,11 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/skarlsson/ws-manager/internal/config"
-	"github.com/skarlsson/ws-manager/internal/kitty"
-	"github.com/skarlsson/ws-manager/internal/ssh"
-	"github.com/skarlsson/ws-manager/internal/state"
-	"github.com/skarlsson/ws-manager/internal/zellij"
+	"github.com/skarlsson/workshell/internal/config"
+	"github.com/skarlsson/workshell/internal/kitty"
+	"github.com/skarlsson/workshell/internal/ssh"
+	"github.com/skarlsson/workshell/internal/state"
+	"github.com/skarlsson/workshell/internal/zellij"
 	"github.com/spf13/cobra"
 )
 
