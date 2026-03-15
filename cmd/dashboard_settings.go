@@ -18,6 +18,9 @@ const (
 	stepHostAdd
 	stepHostEdit
 	stepGlobalConfig
+	stepKeybindings
+	stepKeybindingAdd
+	stepKeybindingEdit
 	stepDeps
 )
 
@@ -42,6 +45,14 @@ type settingsModel struct {
 	cfgEditing    bool
 	cfgInput      textinput.Model
 
+	// Keybindings
+	keybindings   []config.Keybinding
+	kbCursor      int
+	kbBindingInput textinput.Model
+	kbCommandInput textinput.Model
+	kbAddStep     int // 0=binding, 1=command
+	kbEditingIdx  int // -1 for new
+
 	// Dependencies
 	depStatuses []deps.ToolStatus
 
@@ -50,7 +61,7 @@ type settingsModel struct {
 	cancelled bool
 }
 
-var settingsMenuItems = []string{"Hosts", "Global Config", "Dependencies"}
+var settingsMenuItems = []string{"Hosts", "Global Config", "Keybindings", "Dependencies"}
 
 func newSettingsModel() settingsModel {
 	nameTI := textinput.New()
@@ -68,12 +79,23 @@ func newSettingsModel() settingsModel {
 	cfgTI := textinput.New()
 	cfgTI.Width = 60
 
+	kbBindTI := textinput.New()
+	kbBindTI.Placeholder = "<super>r"
+	kbBindTI.Width = 40
+
+	kbCmdTI := textinput.New()
+	kbCmdTI.Placeholder = "rotate"
+	kbCmdTI.Width = 40
+
 	return settingsModel{
-		step:          stepSettingsMenu,
-		hostNameInput: nameTI,
-		hostSSHInput:  sshTI,
-		hostDirInput:  dirTI,
-		cfgInput:      cfgTI,
+		step:           stepSettingsMenu,
+		hostNameInput:  nameTI,
+		hostSSHInput:   sshTI,
+		hostDirInput:   dirTI,
+		cfgInput:       cfgTI,
+		kbBindingInput: kbBindTI,
+		kbCommandInput: kbCmdTI,
+		kbEditingIdx:   -1,
 	}
 }
 
@@ -93,6 +115,10 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			return m.updateHostAdd(msg)
 		case stepGlobalConfig:
 			return m.updateGlobalConfig(msg)
+		case stepKeybindings:
+			return m.updateKeybindings(msg)
+		case stepKeybindingAdd, stepKeybindingEdit:
+			return m.updateKeybindingAdd(msg)
 		case stepDeps:
 			return m.updateDeps(msg)
 		}
@@ -109,6 +135,13 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			m.hostSSHInput, cmd = m.hostSSHInput.Update(msg)
 		case 2:
 			m.hostDirInput, cmd = m.hostDirInput.Update(msg)
+		}
+	case stepKeybindingAdd, stepKeybindingEdit:
+		switch m.kbAddStep {
+		case 0:
+			m.kbBindingInput, cmd = m.kbBindingInput.Update(msg)
+		case 1:
+			m.kbCommandInput, cmd = m.kbCommandInput.Update(msg)
 		}
 	case stepGlobalConfig:
 		if m.cfgEditing {
@@ -142,7 +175,15 @@ func (m settingsModel) updateMenu(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 			m.cfgCursor = 0
 			m.cfgEditing = false
 			m.step = stepGlobalConfig
-		case 2: // Dependencies
+		case 2: // Keybindings
+			m.globalCfg, _ = config.LoadGlobalConfig()
+			m.keybindings = m.globalCfg.Keybindings
+			if len(m.keybindings) == 0 {
+				m.keybindings = config.DefaultKeybindings()
+			}
+			m.kbCursor = 0
+			m.step = stepKeybindings
+		case 3: // Dependencies
 			m.depStatuses = deps.CheckAll()
 			m.step = stepDeps
 		}
@@ -348,6 +389,140 @@ func (m settingsModel) updateGlobalConfig(msg tea.KeyMsg) (settingsModel, tea.Cm
 	return m, nil
 }
 
+// Keybindings list view
+func (m settingsModel) updateKeybindings(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.step = stepSettingsMenu
+		m.message = ""
+	case "down":
+		// +1 for the "Add new..." option
+		if m.kbCursor < len(m.keybindings) {
+			m.kbCursor++
+		}
+	case "up":
+		if m.kbCursor > 0 {
+			m.kbCursor--
+		}
+	case "a":
+		m.kbAddStep = 0
+		m.kbBindingInput.SetValue("")
+		m.kbCommandInput.SetValue("")
+		m.kbBindingInput.Focus()
+		m.kbEditingIdx = -1
+		m.step = stepKeybindingAdd
+		m.message = ""
+		return m, textinput.Blink
+	case "enter":
+		if m.kbCursor < len(m.keybindings) {
+			kb := m.keybindings[m.kbCursor]
+			m.kbAddStep = 0
+			m.kbBindingInput.SetValue(kb.Binding)
+			m.kbCommandInput.SetValue(kb.Command)
+			m.kbBindingInput.Focus()
+			m.kbEditingIdx = m.kbCursor
+			m.step = stepKeybindingEdit
+			m.message = ""
+			return m, textinput.Blink
+		} else {
+			// "Add new..." selected
+			m.kbAddStep = 0
+			m.kbBindingInput.SetValue("")
+			m.kbCommandInput.SetValue("")
+			m.kbBindingInput.Focus()
+			m.kbEditingIdx = -1
+			m.step = stepKeybindingAdd
+			m.message = ""
+			return m, textinput.Blink
+		}
+	case "d":
+		if m.kbCursor < len(m.keybindings) {
+			m.keybindings = append(m.keybindings[:m.kbCursor], m.keybindings[m.kbCursor+1:]...)
+			if err := m.saveKeybindings(); err != nil {
+				m.message = fmt.Sprintf("Save failed: %v", err)
+			} else {
+				m.message = "Removed"
+			}
+			if m.kbCursor >= len(m.keybindings) && len(m.keybindings) > 0 {
+				m.kbCursor = len(m.keybindings) - 1
+			}
+		}
+	case "A":
+		if err := applyKeybindings(m.keybindings); err != nil {
+			m.message = fmt.Sprintf("Apply failed: %v", err)
+		} else {
+			m.message = fmt.Sprintf("Applied %d keybindings via gsettings", len(m.keybindings))
+		}
+	}
+	return m, nil
+}
+
+// Keybinding add/edit input flow
+func (m settingsModel) updateKeybindingAdd(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.kbCursor = 0
+		m.step = stepKeybindings
+		m.message = ""
+		return m, nil
+	case "enter":
+		switch m.kbAddStep {
+		case 0:
+			binding := strings.TrimSpace(m.kbBindingInput.Value())
+			if binding == "" {
+				m.message = "Binding is required (e.g. <super>r)"
+				return m, nil
+			}
+			m.kbAddStep = 1
+			m.kbCommandInput.Focus()
+			m.message = ""
+			return m, textinput.Blink
+		case 1:
+			command := strings.TrimSpace(m.kbCommandInput.Value())
+			if command == "" {
+				m.message = "Command is required (e.g. rotate)"
+				return m, nil
+			}
+			binding := strings.TrimSpace(m.kbBindingInput.Value())
+			kb := config.Keybinding{Binding: binding, Command: command}
+
+			if m.kbEditingIdx >= 0 && m.kbEditingIdx < len(m.keybindings) {
+				m.keybindings[m.kbEditingIdx] = kb
+			} else {
+				m.keybindings = append(m.keybindings, kb)
+			}
+
+			if err := m.saveKeybindings(); err != nil {
+				m.message = fmt.Sprintf("Save failed: %v", err)
+				return m, nil
+			}
+
+			m.kbCursor = 0
+			m.step = stepKeybindings
+			m.message = "Saved"
+			return m, nil
+		}
+	}
+
+	var cmd tea.Cmd
+	switch m.kbAddStep {
+	case 0:
+		m.kbBindingInput, cmd = m.kbBindingInput.Update(msg)
+	case 1:
+		m.kbCommandInput, cmd = m.kbCommandInput.Update(msg)
+	}
+	return m, cmd
+}
+
+func (m *settingsModel) saveKeybindings() error {
+	cfg, err := config.LoadGlobalConfig()
+	if err != nil {
+		return err
+	}
+	cfg.Keybindings = m.keybindings
+	return config.SaveGlobalConfig(cfg)
+}
+
 // Dependencies view
 func (m settingsModel) updateDeps(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
 	switch msg.String() {
@@ -499,6 +674,66 @@ func (m settingsModel) View() string {
 		} else {
 			b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: edit/toggle  Esc: back"))
 		}
+		b.WriteString("\n")
+
+	case stepKeybindings:
+		b.WriteString(titleStyle.Render("Keybindings"))
+		b.WriteString("\n\n")
+		if len(m.keybindings) == 0 {
+			b.WriteString(inactiveStyle.Render("  No keybindings configured."))
+			b.WriteString("\n")
+		} else {
+			for i, kb := range m.keybindings {
+				label := fmt.Sprintf("%-16s → ws %s", kb.Binding, kb.Command)
+				if i == m.kbCursor {
+					b.WriteString(selectedStyle.Render(fmt.Sprintf("  > %s", label)))
+				} else {
+					b.WriteString(normalStyle.Render(fmt.Sprintf("    %s", label)))
+				}
+				b.WriteString("\n")
+			}
+		}
+		addLabel := "Add new keybinding..."
+		if m.kbCursor == len(m.keybindings) {
+			b.WriteString(selectedStyle.Render(fmt.Sprintf("  > %s", addLabel)))
+		} else {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("    %s", addLabel)))
+		}
+		b.WriteString("\n\n")
+		if m.message != "" {
+			b.WriteString("  " + warnStyle.Render(m.message) + "\n\n")
+		}
+		b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: edit  a: add  d: remove  A: apply to GNOME  Esc: back"))
+		b.WriteString("\n")
+
+	case stepKeybindingAdd, stepKeybindingEdit:
+		if m.step == stepKeybindingEdit {
+			b.WriteString(titleStyle.Render("Edit Keybinding"))
+		} else {
+			b.WriteString(titleStyle.Render("Add Keybinding"))
+		}
+		b.WriteString("\n\n")
+		if m.kbAddStep >= 0 {
+			label := "  Binding: "
+			if m.kbAddStep == 0 {
+				b.WriteString(normalStyle.Render(label))
+				b.WriteString(m.kbBindingInput.View())
+			} else {
+				b.WriteString(normalStyle.Render(label + m.kbBindingInput.Value()))
+			}
+			b.WriteString("\n")
+		}
+		if m.kbAddStep >= 1 {
+			label := "  Command: "
+			b.WriteString(normalStyle.Render(label))
+			b.WriteString(m.kbCommandInput.View())
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		if m.message != "" {
+			b.WriteString("  " + warnStyle.Render(m.message) + "\n\n")
+		}
+		b.WriteString(helpStyle.Render("  Enter: next  Esc: cancel"))
 		b.WriteString("\n")
 
 	case stepDeps:

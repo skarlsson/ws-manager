@@ -28,3 +28,14 @@ if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
     echo "Add to your PATH if not already:"
     echo "  export PATH=\"${INSTALL_DIR}:\$PATH\""
 fi
+
+# Post-install: dependencies then keybindings
+echo ""
+echo "Installing dependencies..."
+"${INSTALL_DIR}/ws" deps install
+
+if command -v gsettings &>/dev/null; then
+    echo ""
+    echo "Applying GNOME keybindings..."
+    "${INSTALL_DIR}/ws" keybindings
+fi

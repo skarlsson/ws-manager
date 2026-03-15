@@ -8,6 +8,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Keybinding struct {
+	Binding string `yaml:"binding"` // GNOME keybinding string, e.g. "<super>r"
+	Command string `yaml:"command"` // ws subcommand name, e.g. "rotate"
+}
+
 type GlobalConfig struct {
 	DefaultLayout    string            `yaml:"default_layout"`
 	DefaultShell     string            `yaml:"default_shell"`
@@ -15,6 +20,14 @@ type GlobalConfig struct {
 	WorkMonitor      string            `yaml:"work_monitor"`
 	FocusMode        string            `yaml:"focus_mode"` // "multi" (move+restore) or "single" (minimize others)
 	WorkspaceBaseDir string            `yaml:"workspace_base_dir,omitempty"`
+	Keybindings      []Keybinding      `yaml:"keybindings,omitempty"`
+}
+
+func DefaultKeybindings() []Keybinding {
+	return []Keybinding{
+		{Binding: "<super>r", Command: "rotate"},
+		{Binding: "<super>u", Command: "unfocus"},
+	}
 }
 
 func DefaultGlobalConfig() GlobalConfig {

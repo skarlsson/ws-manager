@@ -129,7 +129,7 @@ ws capture myproject    # just one
 ### Keybindings (GNOME)
 
 ```bash
-bash setup-keybindings.sh
+ws keybindings
 ```
 
 This configures:
