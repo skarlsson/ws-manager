@@ -68,7 +68,14 @@ func ensureLocalBinInPath() []string {
 	for i, e := range env {
 		if strings.HasPrefix(e, "PATH=") {
 			path := e[5:]
-			if !strings.Contains(path, localBin) {
+			found := false
+			for _, dir := range strings.Split(path, ":") {
+				if dir == localBin {
+					found = true
+					break
+				}
+			}
+			if !found {
 				env[i] = "PATH=" + localBin + ":" + path
 			}
 			return env

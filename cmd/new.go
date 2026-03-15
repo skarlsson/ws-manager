@@ -68,9 +68,9 @@ var newCmd = &cobra.Command{
 		dir := prompt("Directory", defaultDir)
 		dir, _ = filepath.Abs(dir)
 
-		// 3. Ensure directory exists — clone if needed
+		// 3. Ensure directory exists — clone or init repo
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			repo := prompt("Directory doesn't exist. Git repo URL to clone (empty to create empty dir)", "")
+			repo := prompt("Directory doesn't exist. Git repo URL to clone (empty to init new repo)", "")
 			if repo != "" {
 				fmt.Printf("Cloning %s into %s...\n", repo, dir)
 				clone := exec.Command("git", "clone", "--recursive", repo, dir)
@@ -80,13 +80,27 @@ var newCmd = &cobra.Command{
 					return fmt.Errorf("cloning repo: %w", err)
 				}
 			} else {
-				fmt.Printf("Creating directory %s...\n", dir)
+				fmt.Printf("Creating %s with git init...\n", dir)
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					return fmt.Errorf("creating directory: %w", err)
 				}
+				initCmd := exec.Command("git", "init", dir)
+				initCmd.Stdout = os.Stdout
+				initCmd.Stderr = os.Stderr
+				if err := initCmd.Run(); err != nil {
+					return fmt.Errorf("git init: %w", err)
+				}
+			}
+		} else if !git.IsGitRepo(dir) {
+			fmt.Printf("Initializing git repo in %s...\n", dir)
+			initCmd := exec.Command("git", "init", dir)
+			initCmd.Stdout = os.Stdout
+			initCmd.Stderr = os.Stderr
+			if err := initCmd.Run(); err != nil {
+				fmt.Printf("Warning: git init failed: %v\n", err)
 			}
 		} else {
-			fmt.Printf("Using existing directory %s\n", dir)
+			fmt.Printf("Using existing repo %s\n", dir)
 		}
 
 		// 4. Layout
@@ -162,7 +176,7 @@ func createWorkspaceNonInteractive(name, dir, gitURL, host string) error {
 		return nil
 	}
 
-	// Clone if git URL provided and dir doesn't exist
+	// Clone if git URL provided, otherwise create dir + git init
 	if gitURL != "" {
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
 			fmt.Printf("Cloning %s into %s...\n", gitURL, dir)
@@ -176,6 +190,14 @@ func createWorkspaceNonInteractive(name, dir, gitURL, host string) error {
 	} else {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating directory: %w", err)
+		}
+		if !git.IsGitRepo(dir) {
+			initCmd := exec.Command("git", "init", dir)
+			initCmd.Stdout = os.Stdout
+			initCmd.Stderr = os.Stderr
+			if err := initCmd.Run(); err != nil {
+				fmt.Printf("Warning: git init failed: %v\n", err)
+			}
 		}
 	}
 

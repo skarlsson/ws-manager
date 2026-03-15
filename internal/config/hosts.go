@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,7 +19,7 @@ type hostsFile struct {
 }
 
 func HostsPath() string {
-	return ConfigDir() + "/hosts.yaml"
+	return filepath.Join(ConfigDir(), "hosts.yaml")
 }
 
 func LoadHosts() ([]HostConfig, error) {

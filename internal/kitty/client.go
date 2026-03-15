@@ -3,7 +3,9 @@ package kitty
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"time"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -43,10 +45,34 @@ func remoteCmd(socket string, args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// SocketAlive checks if a kitty instance is running by connecting to its Unix socket.
+// More reliable than PID-based checks — the socket only accepts connections when
+// kitty is actually alive and listening.
+func SocketAlive(wsName string) bool {
+	socket := SocketPath(wsName)
+	conn, err := net.DialTimeout("unix", socket, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
+}
+
+// IsAlive checks if a kitty instance is running, using socket check first (reliable),
+// falling back to PID check.
+func IsAlive(wsName string, pid int) bool {
+	if SocketAlive(wsName) {
+		return true
+	}
+	return IsRunning(pid)
+}
+
 // Launch starts a new kitty instance for a workspace.
 // Returns the PID of the kitty process.
 func Launch(wsName, cwd, title string) (int, error) {
 	socket := SocketPath(wsName)
+	// Remove stale socket from previous instance
+	os.Remove(socket)
 
 	cmd := exec.Command("kitty",
 		"--listen-on", "unix:"+socket,
@@ -143,6 +169,8 @@ func SetTitle(wsName, title string) error {
 // Returns the PID of the kitty process.
 func LaunchRemote(wsName, title string) (int, error) {
 	socket := SocketPath(wsName)
+	// Remove stale socket from previous instance
+	os.Remove(socket)
 
 	cmd := exec.Command("kitty",
 		"--listen-on", "unix:"+socket,

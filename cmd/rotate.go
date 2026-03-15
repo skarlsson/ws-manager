@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/skarlsson/ws-manager/internal/config"
 	"github.com/skarlsson/ws-manager/internal/git"
 	"github.com/skarlsson/ws-manager/internal/kitty"
 	"github.com/skarlsson/ws-manager/internal/monitor"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 	"github.com/skarlsson/ws-manager/internal/state"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +36,7 @@ func bringToFront(name string) error {
 	// Move previous workspace away
 	if prev != "" && prev != name {
 		prevSt, err := state.Load(prev)
-		if err == nil && prevSt.Active && kitty.IsRunning(prevSt.KittyPID) {
+		if err == nil && prevSt.Active && kitty.IsAlive(prev, prevSt.KittyPID) {
 			prevWinID, err := kitty.PlatformWindowID(prev)
 			if err == nil {
 				if mode == "single" {
@@ -50,7 +52,7 @@ func bringToFront(name string) error {
 		// Minimize remaining active workspaces
 		active, _ := state.ListActive()
 		for _, other := range active {
-			if other.Name == name || other.Name == prev || !kitty.IsRunning(other.KittyPID) {
+			if other.Name == name || other.Name == prev || !kitty.IsAlive(other.Name, other.KittyPID) {
 				continue
 			}
 			otherWinID, err := kitty.PlatformWindowID(other.Name)
@@ -94,6 +96,36 @@ func bringToFront(name string) error {
 }
 
 func refreshTitle(name string) {
+	st, err := state.Load(name)
+	if err != nil {
+		return
+	}
+
+	if st.Remote {
+		// Remote workspace — title includes host, and branch comes from remote
+		host, err := config.LoadHost(st.Host)
+		if err != nil {
+			return
+		}
+		// Parse workspace name from stateKey (host@wsName)
+		wsName := name
+		if i := strings.IndexByte(name, '@'); i > 0 {
+			wsName = name[i+1:]
+		}
+		title := fmt.Sprintf("ws: %s [%s]", wsName, st.Host)
+		statuses, err := ssh.GetRemoteStatuses(host.SSH)
+		if err == nil {
+			for _, rs := range statuses {
+				if rs.Name == wsName && rs.Branch != "" {
+					title = fmt.Sprintf("ws: %s [%s] (%s)", wsName, rs.Branch, st.Host)
+					break
+				}
+			}
+		}
+		kitty.SetTitle(name, title)
+		return
+	}
+
 	ws, err := config.LoadWorkspace(name)
 	if err != nil {
 		return
@@ -118,7 +150,7 @@ var rotateCmd = &cobra.Command{
 
 		var running []state.WorkspaceState
 		for _, st := range active {
-			if kitty.IsRunning(st.KittyPID) {
+			if kitty.IsAlive(st.Name, st.KittyPID) && !st.Detached {
 				running = append(running, st)
 			}
 		}
@@ -150,7 +182,7 @@ var focusCmd = &cobra.Command{
 		name := args[0]
 
 		st, err := state.Load(name)
-		if err != nil || !st.Active || !kitty.IsRunning(st.KittyPID) {
+		if err != nil || !st.Active || !kitty.IsAlive(name, st.KittyPID) {
 			return fmt.Errorf("workspace %q is not running", name)
 		}
 
@@ -174,7 +206,7 @@ var unfocusCmd = &cobra.Command{
 		}
 
 		st, err := state.Load(name)
-		if err != nil || !st.Active || !kitty.IsRunning(st.KittyPID) {
+		if err != nil || !st.Active || !kitty.IsAlive(name, st.KittyPID) {
 			state.SaveFocused("")
 			return fmt.Errorf("workspace %q is no longer running", name)
 		}

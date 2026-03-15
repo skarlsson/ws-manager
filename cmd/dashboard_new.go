@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -78,7 +79,7 @@ type newWSModel struct {
 	cancelled bool
 }
 
-var typeOptions = []string{"Git clone", "Blank project"}
+var typeOptions = []string{"Git clone", "New local repo"}
 
 func newNewWSModel(baseDir string) newWSModel {
 	urlTI := textinput.New()
@@ -194,11 +195,11 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 		// Host options: "Local" + each configured host
 		numOpts := 1 + len(m.hosts)
 		switch msg.String() {
-		case "j", "down":
+		case "down":
 			if m.hostCursor < numOpts-1 {
 				m.hostCursor++
 			}
-		case "k", "up":
+		case "up":
 			if m.hostCursor > 0 {
 				m.hostCursor--
 			}
@@ -211,32 +212,30 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			} else {
 				h := m.hosts[m.hostCursor-1]
 				m.hostName = h.Name
-				// For remote: go to name input, then remote dir input
-				m.step = stepInputName
-				m.nameInput.SetValue("")
-				m.nameInput.Focus()
-				return m, textinput.Blink
+				// Remote: go to type selection (git clone or new repo)
+				m.step = stepSelectType
+				m.typeCursor = 0
 			}
 		}
 		return m, nil
 
 	case stepBrowseDir:
 		switch msg.String() {
-		case "j", "down":
+		case "down":
 			if m.browseCur < len(m.browseDirs)-1 {
 				m.browseCur++
 			}
-		case "k", "up":
+		case "up":
 			if m.browseCur > 0 {
 				m.browseCur--
 			}
-		case "l", "right":
+		case "right":
 			// Descend into selected directory
 			if len(m.browseDirs) > 0 {
 				m.browseDir = filepath.Join(m.browseDir, m.browseDirs[m.browseCur])
 				m.refreshBrowse()
 			}
-		case "backspace", "h", "left":
+		case "backspace", "left":
 			// Go up
 			parent := filepath.Dir(m.browseDir)
 			if parent != m.browseDir {
@@ -276,11 +275,11 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 
 	case stepSelectType:
 		switch msg.String() {
-		case "j", "down":
+		case "down":
 			if m.typeCursor < len(typeOptions)-1 {
 				m.typeCursor++
 			}
-		case "k", "up":
+		case "up":
 			if m.typeCursor > 0 {
 				m.typeCursor--
 			}
@@ -291,7 +290,19 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 				m.urlInput.Focus()
 				return m, textinput.Blink
 			}
-			// Blank project
+			if m.hostName != "" {
+				// Remote new repo: ask for remote dir, then name
+				host, _ := config.LoadHost(m.hostName)
+				defaultDir := host.WorkspaceDir
+				if defaultDir != "" {
+					defaultDir += "/"
+				}
+				m.remoteDirInp.SetValue(defaultDir)
+				m.remoteDirInp.Focus()
+				m.step = stepInputRemoteDir
+				return m, textinput.Blink
+			}
+			// Local blank project
 			m.repoDir = m.rootDir
 			m.step = stepInputName
 			m.nameInput.SetValue(filepath.Base(m.rootDir))
@@ -312,9 +323,21 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 				return m, nil
 			}
 			m.gitURL = url
-			m.repoDir = filepath.Join(m.rootDir, git.RepoName(url))
 			m.message = ""
-			// Go to name — clone deferred to confirm
+			if m.hostName != "" {
+				// Remote git clone: ask for remote dir next
+				host, _ := config.LoadHost(m.hostName)
+				defaultDir := host.WorkspaceDir
+				if defaultDir != "" {
+					defaultDir += "/" + git.RepoName(url)
+				}
+				m.remoteDirInp.SetValue(defaultDir)
+				m.remoteDirInp.Focus()
+				m.step = stepInputRemoteDir
+				return m, textinput.Blink
+			}
+			// Local: set repoDir and go to name
+			m.repoDir = filepath.Join(m.rootDir, git.RepoName(url))
 			m.step = stepInputName
 			m.nameInput.SetValue(git.RepoName(url))
 			m.nameInput.Focus()
@@ -326,11 +349,11 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 
 	case stepSelectBranch:
 		switch msg.String() {
-		case "j", "down":
+		case "down":
 			if m.branchCursor < len(m.branches)-1 {
 				m.branchCursor++
 			}
-		case "k", "up":
+		case "up":
 			if m.branchCursor > 0 {
 				m.branchCursor--
 			}
@@ -356,18 +379,6 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			}
 			m.wsName = name
 			m.message = ""
-			if m.hostName != "" {
-				// Remote: ask for remote directory
-				host, _ := config.LoadHost(m.hostName)
-				defaultDir := ""
-				if host.WorkspaceDir != "" {
-					defaultDir = host.WorkspaceDir + "/" + name
-				}
-				m.remoteDirInp.SetValue(defaultDir)
-				m.remoteDirInp.Focus()
-				m.step = stepInputRemoteDir
-				return m, textinput.Blink
-			}
 			m.step = stepConfirm
 			return m, nil
 		}
@@ -384,8 +395,11 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			}
 			m.repoDir = dir
 			m.message = ""
-			m.step = stepConfirm
-			return m, nil
+			// Go to name, pre-filled from dir basename
+			m.step = stepInputName
+			m.nameInput.SetValue(filepath.Base(dir))
+			m.nameInput.Focus()
+			return m, textinput.Blink
 		}
 		var cmd tea.Cmd
 		m.remoteDirInp, cmd = m.remoteDirInp.Update(msg)
@@ -442,11 +456,16 @@ func (m newWSModel) doSetup() tea.Cmd {
 			}
 		}
 
-		// Create dir if blank and doesn't exist
+		// Create dir + git init if new local repo
 		if projType == projectBlank {
 			if _, err := os.Stat(dir); os.IsNotExist(err) {
 				if err := os.MkdirAll(dir, 0755); err != nil {
 					return setupDoneMsg{err: fmt.Errorf("mkdir: %w", err)}
+				}
+			}
+			if !git.IsGitRepo(dir) {
+				if err := exec.Command("git", "init", dir).Run(); err != nil {
+					return setupDoneMsg{err: fmt.Errorf("git init: %w", err)}
 				}
 			}
 		}
@@ -521,7 +540,7 @@ func (m newWSModel) View() string {
 			b.WriteString("\n")
 		}
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("  j/k: navigate  Enter: select  Esc: cancel"))
+		b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: select  Esc: cancel"))
 		b.WriteString("\n")
 
 	case stepBrowseDir:
@@ -555,11 +574,15 @@ func (m newWSModel) View() string {
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("  j/k: navigate  l: open dir  h: up  Enter: select this dir  Esc: cancel"))
+		b.WriteString(helpStyle.Render("  ↑/↓: navigate  →: open dir  ←: up  Enter: select this dir  Esc: cancel"))
 		b.WriteString("\n")
 
 	case stepSelectType:
-		b.WriteString(normalStyle.Render(fmt.Sprintf("  Root: %s", m.rootDir)))
+		if m.hostName != "" {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  Host: %s", m.hostName)))
+		} else {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  Root: %s", m.rootDir)))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(normalStyle.Render("  Project type:"))
 		b.WriteString("\n")
@@ -573,7 +596,11 @@ func (m newWSModel) View() string {
 		}
 
 	case stepInputGitURL:
-		b.WriteString(normalStyle.Render(fmt.Sprintf("  Root: %s", m.rootDir)))
+		if m.hostName != "" {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  Host: %s", m.hostName)))
+		} else {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  Root: %s", m.rootDir)))
+		}
 		b.WriteString("\n\n")
 		b.WriteString(normalStyle.Render("  Git URL:"))
 		b.WriteString("\n  ")
@@ -617,8 +644,11 @@ func (m newWSModel) View() string {
 	case stepInputRemoteDir:
 		b.WriteString(normalStyle.Render(fmt.Sprintf("  Host: %s", m.hostName)))
 		b.WriteString("\n")
-		b.WriteString(normalStyle.Render(fmt.Sprintf("  Name: %s", m.wsName)))
-		b.WriteString("\n\n")
+		if m.gitURL != "" {
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  Clone: %s", m.gitURL)))
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
 		b.WriteString(normalStyle.Render("  Remote directory:"))
 		b.WriteString("\n  ")
 		b.WriteString(m.remoteDirInp.View())

@@ -26,10 +26,10 @@ func parseWorkspaceRef(ref string) (string, string) {
 }
 
 // stateKey returns the state file key for a workspace.
-// For remote: "host--name", for local: "name".
+// For remote: "host@name", for local: "name".
 func stateKey(hostName, wsName string) string {
 	if hostName != "" {
-		return hostName + "_" + wsName
+		return hostName + "@" + wsName
 	}
 	return wsName
 }
@@ -60,7 +60,25 @@ func openLocalWorkspace(name string) error {
 	}
 
 	st, _ := state.Load(name)
-	if st.Active && kitty.IsRunning(st.KittyPID) {
+
+	// Detached with kitty still alive → unminimize and reactivate
+	if st.Active && st.Detached && kitty.IsAlive(name, st.KittyPID) {
+		if err := kitty.Activate(name); err != nil {
+			return fmt.Errorf("reactivating detached workspace %q: %w", name, err)
+		}
+		st.Detached = false
+		if err := state.Save(st); err != nil {
+			return fmt.Errorf("saving state: %w", err)
+		}
+		return nil
+	}
+
+	// Detached but kitty died → clean up stale state, launch fresh
+	if st.Active && st.Detached && !kitty.IsAlive(name, st.KittyPID) {
+		_ = state.Remove(name)
+	}
+
+	if st.Active && !st.Detached && kitty.IsAlive(name, st.KittyPID) {
 		return fmt.Errorf("workspace %q is already open (PID %d)", name, st.KittyPID)
 	}
 
@@ -116,11 +134,16 @@ func openRemoteWorkspace(hostName, wsName string) error {
 
 	sk := stateKey(hostName, wsName)
 	st, _ := state.Load(sk)
-	if st.Active && st.KittyPID > 0 && kitty.IsRunning(st.KittyPID) {
+
+	// Check if kitty is alive via socket (reliable) or PID
+	if kitty.IsAlive(sk, st.KittyPID) {
 		// Already open — focus the window
 		if err := kitty.Activate(sk); err != nil {
 			return fmt.Errorf("workspace %q is already open (PID %d)", wsName, st.KittyPID)
 		}
+		st.Detached = false
+		st.Active = true
+		_ = state.Save(st)
 		return nil
 	}
 
@@ -162,6 +185,7 @@ func openRemoteWorkspace(hostName, wsName string) error {
 		KittyPID:      pid,
 		ZellijSession: session,
 		Active:        true,
+		Detached:      false,
 		Remote:        true,
 		Host:          hostName,
 	}

@@ -141,11 +141,28 @@ func installZellij() error {
 	}
 
 	url := fmt.Sprintf("https://github.com/zellij-org/zellij/releases/latest/download/zellij-%s.tar.gz", zellijArch)
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("curl -fsSL -L '%s' | tar xz -C '%s'", url, binDir))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+
+	// Download to temp file then extract — avoids shell interpolation issues
+	tmpFile, err := os.CreateTemp("", "zellij-*.tar.gz")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	tmpFile.Close()
+	defer os.Remove(tmpPath)
+
+	dl := exec.Command("curl", "-fsSL", "-L", "-o", tmpPath, url)
+	dl.Stdout = os.Stdout
+	dl.Stderr = os.Stderr
+	if err := dl.Run(); err != nil {
 		return fmt.Errorf("downloading zellij: %w", err)
+	}
+
+	extract := exec.Command("tar", "xzf", tmpPath, "-C", binDir)
+	extract.Stdout = os.Stdout
+	extract.Stderr = os.Stderr
+	if err := extract.Run(); err != nil {
+		return fmt.Errorf("extracting zellij: %w", err)
 	}
 
 	return nil

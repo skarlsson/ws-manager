@@ -67,7 +67,12 @@ var listCmd = &cobra.Command{
 		seenRemote := make(map[string]bool)
 		var entries []listEntry
 
-		var wg2 sync.WaitGroup
+		type claudeLookup struct {
+			idx     int
+			session string
+		}
+		var claudeLookups []claudeLookup
+
 		for _, ws := range workspaces {
 			e := listEntry{
 				ws:   ws,
@@ -85,9 +90,9 @@ var listCmd = &cobra.Command{
 					if e.branch == "" {
 						e.branch = "-"
 					}
-					sk := ws.Host + "_" + ws.Name
+					sk := ws.Host + "@" + ws.Name
 					st, _ := state.Load(sk)
-					kittyUp := st.KittyPID > 0 && kitty.IsRunning(st.KittyPID)
+					kittyUp := kitty.IsAlive(sk, st.KittyPID)
 					if rs.Active && kittyUp {
 						e.status = "active"
 					} else if rs.Active {
@@ -107,19 +112,16 @@ var listCmd = &cobra.Command{
 				} else {
 					e.branch = "-"
 				}
+				st, _ := state.Load(ws.Name)
 				session := zellij.SessionName(ws.Name)
-				if zellij.SessionExists(session) {
+				if st.Active && st.Detached {
+					e.status = "detached"
+				} else if zellij.SessionExists(session) {
 					e.status = "active"
-					idx := len(entries)
-					entries = append(entries, e)
-					wg2.Add(1)
-					go func(i int, s string) {
-						defer wg2.Done()
-						entries[i].claude = process.GetClaudeInfo(s).Pretty()
-					}(idx, session)
-					continue
+					claudeLookups = append(claudeLookups, claudeLookup{idx: len(entries), session: session})
+				} else {
+					e.status = "inactive"
 				}
-				e.status = "inactive"
 				e.claude = "-"
 			}
 
@@ -154,6 +156,15 @@ var listCmd = &cobra.Command{
 			}
 		}
 
+		// Run claude lookups in parallel — safe now that slice is fully built
+		var wg2 sync.WaitGroup
+		for _, cl := range claudeLookups {
+			wg2.Add(1)
+			go func(i int, s string) {
+				defer wg2.Done()
+				entries[i].claude = process.GetClaudeInfo(s).Pretty()
+			}(cl.idx, cl.session)
+		}
 		wg2.Wait()
 
 		if len(entries) == 0 {

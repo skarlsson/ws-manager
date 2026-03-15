@@ -18,6 +18,7 @@ type WorkspaceState struct {
 	HomeX         int    `yaml:"home_x"`        // original window X position
 	HomeY         int    `yaml:"home_y"`        // original window Y position
 	HomeCaptured  bool   `yaml:"home_captured"` // true once positions are captured
+	Detached      bool   `yaml:"detached,omitempty"`
 	Remote        bool   `yaml:"remote,omitempty"`
 	Host          string `yaml:"host,omitempty"`
 }
@@ -176,6 +177,12 @@ func ListActive() ([]WorkspaceState, error) {
 }
 
 func workspaceConfigExists(name string) bool {
+	// Remote workspace state keys contain "@" (e.g., "host@wsname").
+	// These may not have a local config file (auto-discovered from remote).
+	// Don't require a local config for remote state files.
+	if strings.Contains(name, "@") {
+		return true
+	}
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		dir = filepath.Join(os.Getenv("HOME"), ".config")
