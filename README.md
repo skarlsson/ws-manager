@@ -25,14 +25,19 @@ No kitty configuration needed. `ws open` launches its own kitty instances with r
 ## Install
 
 ```bash
-# Build and install to ~/.local/bin/ws
-bash build.sh install
+curl -fsSL https://github.com/skarlsson/workshell/releases/latest/download/install.sh | bash
 ```
 
-Or download a release binary:
+To update an existing install:
 
 ```bash
-ws update   # self-update to latest GitHub release
+ws update
+```
+
+### Build from source
+
+```bash
+bash build.sh install
 ```
 
 ## Usage
