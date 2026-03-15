@@ -25,6 +25,7 @@ type WorkspaceStatus struct {
 	Claude     bool   `json:"claude"`
 	ClaudeCPU  int64  `json:"claude_cpu_secs"`
 	ClaudeTime string `json:"claude_cpu_time,omitempty"`
+	ClaudeIO   int64  `json:"claude_io,omitempty"` // cumulative bytes read, for delta tracking
 	Host       string `json:"host,omitempty"`
 	Detached   bool   `json:"detached,omitempty"`
 }
@@ -102,6 +103,7 @@ func getWorkspaceStatus(name, focused string) (WorkspaceStatus, error) {
 		s.Claude = ci.Running
 		s.ClaudeCPU = ci.CPUSecs
 		s.ClaudeTime = ci.CPUTime
+		s.ClaudeIO = ci.RChar
 	}
 
 	return s, nil

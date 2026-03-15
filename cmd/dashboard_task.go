@@ -8,12 +8,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/skarlsson/ws-manager/internal/config"
 	"github.com/skarlsson/ws-manager/internal/git"
+	"github.com/skarlsson/ws-manager/internal/ssh"
 )
 
 type taskDoneMsg struct {
-	action  string // "switched", "started", "finished"
-	task    string
-	err     error
+	action string // "switched", "started", "finished"
+	task   string
+	err    error
 }
 
 type taskModel struct {
@@ -29,6 +30,7 @@ type taskModel struct {
 	done      bool
 	cancelled bool
 	remote    bool
+	hostSSH   string // SSH target for remote workspaces
 }
 
 func newTaskModel(e workspaceEntry) taskModel {
@@ -45,7 +47,20 @@ func newTaskModel(e workspaceEntry) taskModel {
 	}
 
 	if m.remote {
-		m.message = "Task management not yet supported for remote workspaces"
+		if h, err := config.LoadHost(e.ws.Host); err == nil {
+			m.hostSSH = h.SSH
+		} else {
+			m.message = fmt.Sprintf("Host %q not found", e.ws.Host)
+			return m
+		}
+		m.loadRemoteTasks()
+		// Get current task from remote status if available
+		if e.remoteStatus != nil {
+			m.branch = e.remoteStatus.Branch
+			if e.remoteStatus.Task != "" {
+				m.current = e.remoteStatus.Task
+			}
+		}
 		return m
 	}
 
@@ -65,6 +80,28 @@ func newTaskModel(e workspaceEntry) taskModel {
 	return m
 }
 
+func (m *taskModel) loadRemoteTasks() {
+	wsCmd := fmt.Sprintf("export PATH=\"$HOME/.local/bin:$PATH\" && ws task list -w %s 2>/dev/null", m.wsName)
+	out, err := ssh.Run(m.hostSSH, wsCmd)
+	if err != nil {
+		return
+	}
+	m.tasks = nil
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || line == "No task branches found." {
+			continue
+		}
+		// Lines look like "* task/foo" or "  task/foo"
+		branch := strings.TrimPrefix(strings.TrimPrefix(line, "* "), "  ")
+		branch = strings.TrimSpace(branch)
+		name := strings.TrimPrefix(branch, "task/")
+		if name != "" {
+			m.tasks = append(m.tasks, name)
+		}
+	}
+}
+
 func (m taskModel) Init() tea.Cmd {
 	return nil
 }
@@ -75,7 +112,6 @@ func (m taskModel) Update(msg tea.Msg) (taskModel, tea.Cmd) {
 		if msg.err != nil {
 			m.message = fmt.Sprintf("Failed: %v", msg.err)
 			m.creating = false
-			// Refresh task list
 			m.refreshTasks()
 			return m, nil
 		}
@@ -105,13 +141,20 @@ func (m taskModel) Update(msg tea.Msg) (taskModel, tea.Cmd) {
 			}
 
 		case "enter":
-			if m.remote || len(m.tasks) == 0 {
+			if len(m.tasks) == 0 {
 				break
 			}
 			task := m.tasks[m.cursor]
 			if task == m.current {
 				m.message = fmt.Sprintf("Already on task %q", task)
 				break
+			}
+			if m.remote {
+				hostSSH := m.hostSSH
+				wsName := m.wsName
+				return m, func() tea.Msg {
+					return doRemoteTaskSwitch(hostSSH, wsName, task)
+				}
 			}
 			wsName := m.wsName
 			wsDir := m.wsDir
@@ -120,9 +163,6 @@ func (m taskModel) Update(msg tea.Msg) (taskModel, tea.Cmd) {
 			}
 
 		case "n":
-			if m.remote {
-				break
-			}
 			m.creating = true
 			m.nameInput.SetValue("")
 			m.nameInput.Focus()
@@ -130,9 +170,16 @@ func (m taskModel) Update(msg tea.Msg) (taskModel, tea.Cmd) {
 			return m, textinput.Blink
 
 		case "d":
-			if m.remote || m.current == "" {
+			if m.current == "" {
 				m.message = "No active task to finish"
 				break
+			}
+			if m.remote {
+				hostSSH := m.hostSSH
+				wsName := m.wsName
+				return m, func() tea.Msg {
+					return doRemoteTaskDone(hostSSH, wsName)
+				}
 			}
 			wsName := m.wsName
 			wsDir := m.wsDir
@@ -158,6 +205,13 @@ func (m taskModel) handleCreateInput(msg tea.KeyMsg) (taskModel, tea.Cmd) {
 			return m, nil
 		}
 		m.creating = false
+		if m.remote {
+			hostSSH := m.hostSSH
+			wsName := m.wsName
+			return m, func() tea.Msg {
+				return doRemoteTaskStart(hostSSH, wsName, name)
+			}
+		}
 		wsName := m.wsName
 		wsDir := m.wsDir
 		return m, func() tea.Msg {
@@ -171,14 +225,23 @@ func (m taskModel) handleCreateInput(msg tea.KeyMsg) (taskModel, tea.Cmd) {
 }
 
 func (m *taskModel) refreshTasks() {
-	m.tasks = nil
-	branches, _ := git.ListBranches(m.wsDir, "task/")
-	for _, b := range branches {
-		m.tasks = append(m.tasks, strings.TrimPrefix(b, "task/"))
-	}
-	m.branch, _ = git.CurrentBranch(m.wsDir)
-	if ws, err := config.LoadWorkspace(m.wsName); err == nil {
-		m.current = ws.CurrentTask
+	if m.remote {
+		m.loadRemoteTasks()
+		// Re-query branch info via SSH
+		branchCmd := fmt.Sprintf("export PATH=\"$HOME/.local/bin:$PATH\" && cd %s && git rev-parse --abbrev-ref HEAD 2>/dev/null", m.wsDir)
+		if out, err := ssh.Run(m.hostSSH, branchCmd); err == nil {
+			m.branch = strings.TrimSpace(out)
+		}
+	} else {
+		m.tasks = nil
+		branches, _ := git.ListBranches(m.wsDir, "task/")
+		for _, b := range branches {
+			m.tasks = append(m.tasks, strings.TrimPrefix(b, "task/"))
+		}
+		m.branch, _ = git.CurrentBranch(m.wsDir)
+		if ws, err := config.LoadWorkspace(m.wsName); err == nil {
+			m.current = ws.CurrentTask
+		}
 	}
 	if m.cursor >= len(m.tasks) && len(m.tasks) > 0 {
 		m.cursor = len(m.tasks) - 1
@@ -188,16 +251,12 @@ func (m *taskModel) refreshTasks() {
 func (m taskModel) View() string {
 	var b strings.Builder
 
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Tasks: %s", m.wsName)))
-	b.WriteString("\n\n")
-
+	title := m.wsName
 	if m.remote {
-		b.WriteString(warnStyle.Render("  Task management not yet supported for remote workspaces"))
-		b.WriteString("\n\n")
-		b.WriteString(helpStyle.Render("  Esc: back"))
-		b.WriteString("\n")
-		return b.String()
+		title += " (remote)"
 	}
+	b.WriteString(titleStyle.Render(fmt.Sprintf("Tasks: %s", title)))
+	b.WriteString("\n\n")
 
 	// Current state
 	branchStr := m.branch
@@ -254,6 +313,39 @@ func (m taskModel) View() string {
 
 	return b.String()
 }
+
+// Remote task operations — delegate to ws CLI on the remote host via SSH
+
+func remoteWsCmd(hostSSH, args string) (string, error) {
+	cmd := fmt.Sprintf("export PATH=\"$HOME/.local/bin:$PATH\" && ws %s", args)
+	return ssh.Run(hostSSH, cmd)
+}
+
+func doRemoteTaskStart(hostSSH, wsName, task string) taskDoneMsg {
+	_, err := remoteWsCmd(hostSSH, fmt.Sprintf("task start %s -w %s", task, wsName))
+	if err != nil {
+		return taskDoneMsg{err: fmt.Errorf("remote task start: %w", err)}
+	}
+	return taskDoneMsg{action: "started", task: task}
+}
+
+func doRemoteTaskSwitch(hostSSH, wsName, task string) taskDoneMsg {
+	_, err := remoteWsCmd(hostSSH, fmt.Sprintf("task switch %s -w %s", task, wsName))
+	if err != nil {
+		return taskDoneMsg{err: fmt.Errorf("remote task switch: %w", err)}
+	}
+	return taskDoneMsg{action: "switched", task: task}
+}
+
+func doRemoteTaskDone(hostSSH, wsName string) taskDoneMsg {
+	_, err := remoteWsCmd(hostSSH, fmt.Sprintf("task done -w %s", wsName))
+	if err != nil {
+		return taskDoneMsg{err: fmt.Errorf("remote task done: %w", err)}
+	}
+	return taskDoneMsg{action: "finished"}
+}
+
+// Local task operations
 
 func doTaskSwitch(wsName, wsDir, task string) taskDoneMsg {
 	branch := "task/" + task

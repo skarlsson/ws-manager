@@ -6,20 +6,36 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 type ClaudeInfo struct {
-	Running  bool
-	CPUSecs  int64  // cumulative CPU seconds
-	CPUTime  string // formatted (H:MM:SS or M:SS)
+	Running        bool
+	WaitingForInput bool  // true when Claude is waiting for user response
+	CPUSecs        int64  // cumulative CPU seconds
+	CPUTime        string // formatted (H:MM:SS or M:SS)
+	PID            int    // claude process PID
+	RChar          int64  // cumulative bytes read (for IO delta tracking)
 }
 
 func (c ClaudeInfo) Pretty() string {
 	if !c.Running {
 		return "-"
 	}
+	if c.WaitingForInput {
+		return c.CPUTime + " (waiting)"
+	}
 	return c.CPUTime
 }
+
+// ioTracker stores previous rchar readings per session for delta computation.
+var ioTracker = struct {
+	sync.Mutex
+	prev map[string]int64
+}{prev: make(map[string]int64)}
+
+// ioThreshold: bytes read below this in one poll interval means "waiting for input".
+const ioThreshold = 500
 
 // GetClaudeInfo checks if claude is running in a zellij session.
 // Reads /proc directly - no subprocesses.
@@ -38,19 +54,37 @@ func GetClaudeInfo(zellijSession string) ClaudeInfo {
 		return ClaudeInfo{}
 	}
 
+	children := getChildren(claudePID)
+
 	utime, stime := readCPUTicks(claudePID)
-	for _, child := range getChildren(claudePID) {
+	for _, child := range children {
 		cu, cs := readCPUTicks(child)
 		utime += cu
 		stime += cs
 	}
 
 	totalSecs := (utime + stime) / clockTicks()
+	rchar := readRChar(claudePID)
+
+	// Compare with previous reading to detect IO activity
+	ioTracker.Lock()
+	prevRChar, hasPrev := ioTracker.prev[zellijSession]
+	ioTracker.prev[zellijSession] = rchar
+	ioTracker.Unlock()
+
+	waiting := false
+	if hasPrev {
+		delta := rchar - prevRChar
+		waiting = delta < ioThreshold
+	}
 
 	return ClaudeInfo{
-		Running: true,
-		CPUSecs: totalSecs,
-		CPUTime: formatDuration(totalSecs),
+		Running:         true,
+		WaitingForInput: waiting,
+		CPUSecs:         totalSecs,
+		CPUTime:         formatDuration(totalSecs),
+		PID:             claudePID,
+		RChar:           rchar,
 	}
 }
 
@@ -132,6 +166,20 @@ func readPPID(pid int) int {
 	}
 	ppid, _ := strconv.Atoi(fields[1])
 	return ppid
+}
+
+func readRChar(pid int) int64 {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/io", pid))
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "rchar:") {
+			val, _ := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(line, "rchar:")), 10, 64)
+			return val
+		}
+	}
+	return 0
 }
 
 func readCPUTicks(pid int) (int64, int64) {
