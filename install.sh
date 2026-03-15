@@ -37,5 +37,5 @@ echo "Installing dependencies..."
 if command -v gsettings &>/dev/null; then
     echo ""
     echo "Applying GNOME keybindings..."
-    "${INSTALL_DIR}/ws" keybindings
+    "${INSTALL_DIR}/ws" keybindings || true
 fi
