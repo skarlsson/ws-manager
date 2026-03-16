@@ -89,7 +89,20 @@ func openLocalWorkspace(name string) error {
 	}
 
 	session := zellij.SessionName(name)
-	zellij.CleanupSession(session)
+
+	// Reattach to live session, clean up dead ones, or create new
+	var zellijCmd string
+	if zellij.SessionExists(session) {
+		if !zellij.CleanupDeadSession(session) {
+			// Session alive — reattach to preserve running programs
+			zellijCmd = zellij.AttachCommand(session, ws.Dir)
+		} else {
+			// Dead session cleaned up — create fresh
+			zellijCmd = zellij.LaunchCommand(session, layoutPath, ws.Dir)
+		}
+	} else {
+		zellijCmd = zellij.LaunchCommand(session, layoutPath, ws.Dir)
+	}
 
 	title := fmt.Sprintf("ws: %s", name)
 	if git.IsGitRepo(ws.Dir) {
@@ -103,7 +116,6 @@ func openLocalWorkspace(name string) error {
 	}
 
 	socket := kitty.SocketPath(name)
-	zellijCmd := zellij.LaunchCommand(session, layoutPath, ws.Dir)
 
 	if err := waitForSocket(socket, 5*time.Second); err != nil {
 		fmt.Printf("Warning: kitty socket not ready: %v\n", err)

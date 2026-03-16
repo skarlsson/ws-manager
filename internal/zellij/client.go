@@ -114,12 +114,15 @@ func SessionExists(name string) bool {
 	return false
 }
 
-// LaunchCommand returns the shell command string to start zellij with a layout.
-// This is meant to be sent to kitty via send-text, not executed directly.
-// Uses --new-session-with-layout to always start fresh (avoids session picker).
+// LaunchCommand returns the shell command string to create a new zellij session.
 func LaunchCommand(session, layoutPath, cwd string) string {
 	if layoutPath != "" {
 		return fmt.Sprintf("cd %s && zellij -s %s -n %s\n", cwd, session, layoutPath)
 	}
 	return fmt.Sprintf("cd %s && zellij -s %s\n", cwd, session)
+}
+
+// AttachCommand returns the shell command string to attach to an existing zellij session.
+func AttachCommand(session, cwd string) string {
+	return fmt.Sprintf("cd %s && zellij attach %s\n", cwd, session)
 }
