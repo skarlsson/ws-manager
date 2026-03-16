@@ -8,7 +8,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/skarlsson/workshell/internal/config"
 	"github.com/skarlsson/workshell/internal/deps"
+	"github.com/skarlsson/workshell/internal/monitor"
 )
+
+type monitorOption struct {
+	connector string
+	label     string
+	primary   bool
+}
 
 type settingsStep int
 
@@ -18,6 +25,7 @@ const (
 	stepHostAdd
 	stepHostEdit
 	stepGlobalConfig
+	stepMonitorSelect
 	stepKeybindings
 	stepKeybindingAdd
 	stepKeybindingEdit
@@ -44,6 +52,10 @@ type settingsModel struct {
 	cfgCursor     int
 	cfgEditing    bool
 	cfgInput      textinput.Model
+
+	// Monitor selection
+	monitors      []monitorOption
+	monitorCursor int
 
 	// Keybindings
 	keybindings   []config.Keybinding
@@ -115,6 +127,8 @@ func (m settingsModel) Update(msg tea.Msg) (settingsModel, tea.Cmd) {
 			return m.updateHostAdd(msg)
 		case stepGlobalConfig:
 			return m.updateGlobalConfig(msg)
+		case stepMonitorSelect:
+			return m.updateMonitorSelect(msg)
 		case stepKeybindings:
 			return m.updateKeybindings(msg)
 		case stepKeybindingAdd, stepKeybindingEdit:
@@ -328,10 +342,7 @@ func (m settingsModel) updateGlobalConfig(msg tea.KeyMsg) (settingsModel, tea.Cm
 		case "enter":
 			val := strings.TrimSpace(m.cfgInput.Value())
 			switch m.cfgCursor {
-			case 0: // FocusMode — toggle handled below, shouldn't reach here
-			case 1: // WorkMonitor
-				m.globalCfg.WorkMonitor = val
-			case 2: // WorkspaceBaseDir
+			case 1: // WorkspaceBaseDir
 				m.globalCfg.WorkspaceBaseDir = val
 			}
 			if err := config.SaveGlobalConfig(m.globalCfg); err != nil {
@@ -352,7 +363,7 @@ func (m settingsModel) updateGlobalConfig(msg tea.KeyMsg) (settingsModel, tea.Cm
 		m.step = stepSettingsMenu
 		m.message = ""
 	case "down":
-		if m.cfgCursor < 2 {
+		if m.cfgCursor < 1 {
 			m.cfgCursor++
 		}
 	case "up":
@@ -361,30 +372,71 @@ func (m settingsModel) updateGlobalConfig(msg tea.KeyMsg) (settingsModel, tea.Cm
 		}
 	case "enter":
 		switch m.cfgCursor {
-		case 0: // FocusMode — toggle
-			if m.globalCfg.FocusMode == "multi" {
-				m.globalCfg.FocusMode = "single"
+		case 0: // WorkMonitor — monitor picker
+			m.monitors = nil
+			m.monitorCursor = 0
+			// "(none)" option first
+			m.monitors = append(m.monitors, monitorOption{connector: "", label: "(none)", primary: false})
+			if mons, err := monitor.ListMonitors(); err == nil {
+				for i, mon := range mons {
+					label := mon.Connector
+					if mon.Primary {
+						label += " (primary)"
+					}
+					label += fmt.Sprintf("  [%d,%d]", mon.X, mon.Y)
+					opt := monitorOption{connector: mon.Connector, label: label, primary: mon.Primary}
+					m.monitors = append(m.monitors, opt)
+					// Default cursor to current config value, or primary
+					if mon.Connector == m.globalCfg.WorkMonitor {
+						m.monitorCursor = i + 1
+					} else if mon.Primary && m.globalCfg.WorkMonitor == "" {
+						m.monitorCursor = i + 1
+					}
+				}
 			} else {
-				m.globalCfg.FocusMode = "multi"
+				m.message = fmt.Sprintf("Could not detect monitors: %v", err)
+				return m, nil
 			}
-			if err := config.SaveGlobalConfig(m.globalCfg); err != nil {
-				m.message = fmt.Sprintf("Save failed: %v", err)
-			} else {
-				m.message = "Saved"
-			}
-		case 1: // WorkMonitor — text input
-			m.cfgEditing = true
-			m.cfgInput.SetValue(m.globalCfg.WorkMonitor)
-			m.cfgInput.Focus()
+			m.step = stepMonitorSelect
 			m.message = ""
-			return m, textinput.Blink
-		case 2: // WorkspaceBaseDir — text input
+		case 1: // WorkspaceBaseDir — text input
 			m.cfgEditing = true
 			m.cfgInput.SetValue(m.globalCfg.WorkspaceBaseDir)
 			m.cfgInput.Focus()
 			m.message = ""
 			return m, textinput.Blink
 		}
+	}
+	return m, nil
+}
+
+// Monitor selection
+func (m settingsModel) updateMonitorSelect(msg tea.KeyMsg) (settingsModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.step = stepGlobalConfig
+		m.message = ""
+	case "down":
+		if m.monitorCursor < len(m.monitors)-1 {
+			m.monitorCursor++
+		}
+	case "up":
+		if m.monitorCursor > 0 {
+			m.monitorCursor--
+		}
+	case "enter":
+		selected := m.monitors[m.monitorCursor]
+		m.globalCfg.WorkMonitor = selected.connector
+		if err := config.SaveGlobalConfig(m.globalCfg); err != nil {
+			m.message = fmt.Sprintf("Save failed: %v", err)
+		} else {
+			if selected.connector == "" {
+				m.message = "Work monitor cleared"
+			} else {
+				m.message = fmt.Sprintf("Work monitor set to %s", selected.connector)
+			}
+		}
+		m.step = stepGlobalConfig
 	}
 	return m, nil
 }
@@ -646,7 +698,6 @@ func (m settingsModel) View() string {
 			value string
 		}
 		fields := []cfgField{
-			{"Focus mode", fmt.Sprintf("[%s]", m.globalCfg.FocusMode)},
 			{"Work monitor", m.globalCfg.WorkMonitor},
 			{"Workspace base dir", m.globalCfg.WorkspaceBaseDir},
 		}
@@ -674,6 +725,29 @@ func (m settingsModel) View() string {
 		} else {
 			b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: edit/toggle  Esc: back"))
 		}
+		b.WriteString("\n")
+
+	case stepMonitorSelect:
+		b.WriteString(titleStyle.Render("Select Work Monitor"))
+		b.WriteString("\n\n")
+		for i, opt := range m.monitors {
+			prefix := "    "
+			if opt.connector == m.globalCfg.WorkMonitor {
+				prefix = "  * "
+			}
+			line := fmt.Sprintf("%s%s", prefix, opt.label)
+			if i == m.monitorCursor {
+				b.WriteString(selectedStyle.Render(fmt.Sprintf("  > %s", opt.label)))
+			} else {
+				b.WriteString(normalStyle.Render(line))
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+		if m.message != "" {
+			b.WriteString("  " + warnStyle.Render(m.message) + "\n\n")
+		}
+		b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: select  Esc: back"))
 		b.WriteString("\n")
 
 	case stepKeybindings:

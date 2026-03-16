@@ -31,6 +31,7 @@ type projectType int
 
 const (
 	projectGit projectType = iota
+	projectExisting
 	projectBlank
 )
 
@@ -71,7 +72,7 @@ type newWSModel struct {
 	cancelled bool
 }
 
-var typeOptions = []string{"Git clone", "New repo"}
+var typeOptions = []string{"Git clone", "Existing folder", "New repo"}
 
 func newNewWSModel(baseDir string) newWSModel {
 	urlTI := textinput.New()
@@ -202,7 +203,7 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 				m.urlInput.Focus()
 				return m, textinput.Blink
 			}
-			// New repo: ask for directory
+			// Existing folder or new repo: ask for directory
 			m.dirInput.SetValue(m.defaultBaseDir() + "/")
 			m.dirInput.Focus()
 			m.step = stepInputDir
@@ -238,18 +239,35 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 		return m, cmd
 
 	case stepInputDir:
-		if msg.String() == "enter" {
+		switch msg.String() {
+		case "enter":
 			dir := strings.TrimSpace(m.dirInput.Value())
 			if dir == "" {
 				m.message = "Directory is required"
 				return m, nil
 			}
+			// Expand ~ to absolute path
+			if strings.HasPrefix(dir, "~/") {
+				home, _ := os.UserHomeDir()
+				dir = filepath.Join(home, dir[2:])
+			}
+			dir = strings.TrimSuffix(dir, "/")
 			m.repoDir = dir
 			m.message = ""
 			m.step = stepInputName
 			m.nameInput.SetValue(filepath.Base(dir))
 			m.nameInput.Focus()
 			return m, textinput.Blink
+		case "tab":
+			completed, matches := completePath(m.dirInput.Value())
+			m.dirInput.SetValue(completed)
+			m.dirInput.SetCursor(len(completed))
+			if matches > 1 {
+				m.message = fmt.Sprintf("%d matches", matches)
+			} else {
+				m.message = ""
+			}
+			return m, nil
 		}
 		var cmd tea.Cmd
 		m.dirInput, cmd = m.dirInput.Update(msg)
@@ -351,6 +369,18 @@ func (m newWSModel) doSetup() tea.Cmd {
 		if projType == projectGit && gitURL != "" {
 			if err := git.Clone(gitURL, dir); err != nil {
 				return setupDoneMsg{err: fmt.Errorf("clone: %w", err)}
+			}
+		}
+
+		// Existing folder: verify it exists, git init if needed
+		if projType == projectExisting {
+			if _, err := os.Stat(dir); os.IsNotExist(err) {
+				return setupDoneMsg{err: fmt.Errorf("directory does not exist: %s", dir)}
+			}
+			if !git.IsGitRepo(dir) {
+				if err := exec.Command("git", "init", dir).Run(); err != nil {
+					return setupDoneMsg{err: fmt.Errorf("git init: %w", err)}
+				}
 			}
 		}
 
@@ -480,6 +510,10 @@ func (m newWSModel) View() string {
 			b.WriteString(normalStyle.Render(fmt.Sprintf("  Clone: %s", m.gitURL)))
 			b.WriteString("\n")
 		}
+		if m.projType == projectExisting {
+			b.WriteString(normalStyle.Render("  Type: Existing folder"))
+			b.WriteString("\n")
+		}
 		b.WriteString("\n")
 		b.WriteString(normalStyle.Render("  Directory:"))
 		b.WriteString("\n  ")
@@ -556,9 +590,99 @@ func (m newWSModel) View() string {
 
 	if m.step != stepConfirm {
 		b.WriteString("\n")
-		b.WriteString(helpStyle.Render("  Esc: cancel"))
+		if m.step == stepInputDir {
+			b.WriteString(helpStyle.Render("  Tab: complete  Esc: cancel"))
+		} else {
+			b.WriteString(helpStyle.Render("  Esc: cancel"))
+		}
 		b.WriteString("\n")
 	}
 
 	return b.String()
+}
+
+// completePath does bash-style tab completion on a partial path.
+// Returns the completed path and the number of matches found.
+func completePath(partial string) (string, int) {
+	if partial == "" {
+		return partial, 0
+	}
+
+	// Expand ~ to home directory
+	expanded := partial
+	home, _ := os.UserHomeDir()
+	hasTilde := false
+	if strings.HasPrefix(expanded, "~/") || expanded == "~" {
+		hasTilde = true
+		expanded = filepath.Join(home, expanded[1:])
+	}
+
+	// If it already ends with / and is a valid dir, list its contents
+	if strings.HasSuffix(expanded, "/") {
+		entries, err := os.ReadDir(expanded)
+		if err != nil {
+			return partial, 0
+		}
+		// Filter to directories only
+		var dirs []string
+		for _, e := range entries {
+			if e.IsDir() {
+				dirs = append(dirs, e.Name())
+			}
+		}
+		if len(dirs) == 1 {
+			result := expanded + dirs[0] + "/"
+			if hasTilde {
+				result = "~/" + strings.TrimPrefix(result, home+"/")
+			}
+			return result, 1
+		}
+		return partial, len(dirs)
+	}
+
+	dir := filepath.Dir(expanded)
+	prefix := filepath.Base(expanded)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return partial, 0
+	}
+
+	var matches []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		if strings.HasPrefix(e.Name(), prefix) {
+			matches = append(matches, e.Name())
+		}
+	}
+
+	if len(matches) == 0 {
+		return partial, 0
+	}
+
+	if len(matches) == 1 {
+		result := filepath.Join(dir, matches[0]) + "/"
+		if hasTilde {
+			result = "~/" + strings.TrimPrefix(result, home+"/")
+		}
+		return result, 1
+	}
+
+	// Multiple matches: complete to longest common prefix
+	common := matches[0]
+	for _, m := range matches[1:] {
+		i := 0
+		for i < len(common) && i < len(m) && common[i] == m[i] {
+			i++
+		}
+		common = common[:i]
+	}
+
+	result := filepath.Join(dir, common)
+	if hasTilde {
+		result = "~/" + strings.TrimPrefix(result, home+"/")
+	}
+	return result, len(matches)
 }

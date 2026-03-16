@@ -15,9 +15,10 @@ type WorkspaceState struct {
 	KittyPID      int    `yaml:"kitty_pid,omitempty"`
 	ZellijSession string `yaml:"zellij_session,omitempty"`
 	Active        bool   `yaml:"active"`
-	HomeX         int    `yaml:"home_x"`        // original window X position
-	HomeY         int    `yaml:"home_y"`        // original window Y position
-	HomeCaptured  bool   `yaml:"home_captured"` // true once positions are captured
+	HomeX         int    `yaml:"home_x"`         // original window X position
+	HomeY         int    `yaml:"home_y"`         // original window Y position
+	HomeCaptured  bool   `yaml:"home_captured"`  // true once positions are captured
+	HomeMaximized bool   `yaml:"home_maximized"` // was window maximized when focused
 	Detached      bool   `yaml:"detached,omitempty"`
 	Remote        bool   `yaml:"remote,omitempty"`
 	Host          string `yaml:"host,omitempty"`
@@ -82,48 +83,6 @@ func SaveFocused(name string) {
 	os.WriteFile(focusedPath(), []byte(name), 0644)
 }
 
-type FocusPosition struct {
-	X          int  `yaml:"x"`
-	Y          int  `yaml:"y"`
-	Captured   bool `yaml:"captured"`
-	OffsetX    int  `yaml:"offset_x"`    // getwindowgeometry vs windowmove offset
-	OffsetY    int  `yaml:"offset_y"`
-	Calibrated bool `yaml:"calibrated"`
-}
-
-func focusPosPath() string {
-	return filepath.Join(stateDir(), ".focus-position")
-}
-
-func LoadFocusPosition() FocusPosition {
-	var fp FocusPosition
-	data, err := os.ReadFile(focusPosPath())
-	if err != nil {
-		return fp
-	}
-	yaml.Unmarshal(data, &fp)
-	return fp
-}
-
-func SaveFocusPosition(x, y int) {
-	fp := LoadFocusPosition()
-	fp.X = x
-	fp.Y = y
-	fp.Captured = true
-	os.MkdirAll(stateDir(), 0755)
-	data, _ := yaml.Marshal(fp)
-	os.WriteFile(focusPosPath(), data, 0644)
-}
-
-func SaveFocusOffset(dx, dy int) {
-	fp := LoadFocusPosition()
-	fp.OffsetX = dx
-	fp.OffsetY = dy
-	fp.Calibrated = true
-	os.MkdirAll(stateDir(), 0755)
-	data, _ := yaml.Marshal(fp)
-	os.WriteFile(focusPosPath(), data, 0644)
-}
 
 func rotateIndexPath() string {
 	return filepath.Join(stateDir(), ".rotate-index")

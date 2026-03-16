@@ -5,8 +5,8 @@ import (
 
 	"github.com/skarlsson/workshell/internal/config"
 	"github.com/skarlsson/workshell/internal/kitty"
-	"github.com/skarlsson/workshell/internal/monitor"
 	"github.com/skarlsson/workshell/internal/state"
+	"github.com/skarlsson/workshell/internal/wm"
 	"github.com/spf13/cobra"
 )
 
@@ -56,12 +56,7 @@ func detachLocalWorkspace(sk string, st state.WorkspaceState) error {
 		return fmt.Errorf("workspace %q has no running kitty process", sk)
 	}
 
-	winID, err := kitty.PlatformWindowID(sk)
-	if err != nil {
-		return fmt.Errorf("getting window ID for %q: %w", sk, err)
-	}
-
-	if err := monitor.MinimizeWindow(winID); err != nil {
+	if err := wm.Default().Minimize(sk); err != nil {
 		return fmt.Errorf("minimizing window: %w", err)
 	}
 

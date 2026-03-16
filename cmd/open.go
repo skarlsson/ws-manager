@@ -12,6 +12,7 @@ import (
 	"github.com/skarlsson/workshell/internal/kitty"
 	"github.com/skarlsson/workshell/internal/ssh"
 	"github.com/skarlsson/workshell/internal/state"
+	"github.com/skarlsson/workshell/internal/wm"
 	"github.com/skarlsson/workshell/internal/zellij"
 	"github.com/spf13/cobra"
 )
@@ -63,7 +64,7 @@ func openLocalWorkspace(name string) error {
 
 	// Detached with kitty still alive → unminimize and reactivate
 	if st.Active && st.Detached && kitty.IsAlive(name, st.KittyPID) {
-		if err := kitty.Activate(name); err != nil {
+		if err := wm.Default().Activate(name); err != nil {
 			return fmt.Errorf("reactivating detached workspace %q: %w", name, err)
 		}
 		st.Detached = false
@@ -138,7 +139,7 @@ func openRemoteWorkspace(hostName, wsName string) error {
 	// Check if kitty is alive via socket (reliable) or PID
 	if kitty.IsAlive(sk, st.KittyPID) {
 		// Already open — focus the window
-		if err := kitty.Activate(sk); err != nil {
+		if err := wm.Default().Activate(sk); err != nil {
 			return fmt.Errorf("workspace %q is already open (PID %d)", wsName, st.KittyPID)
 		}
 		st.Detached = false

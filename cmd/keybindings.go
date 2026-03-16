@@ -55,10 +55,28 @@ func applyKeybindings(bindings []config.Keybinding) error {
 		return fmt.Errorf("reading existing keybindings: %w", err)
 	}
 
-	var newPaths []string
+	// Parse existing paths and remove any that belong to ws
+	existingPaths := parseGsettingsList(existing)
+	var keepPaths []string
+	for _, p := range existingPaths {
+		subSchema := schema + ".custom-keybinding:" + p
+		name, err := gsettingsGet(subSchema, "name")
+		if err != nil {
+			keepPaths = append(keepPaths, p)
+			continue
+		}
+		// Remove quotes from gsettings output (e.g. 'ws rotate' -> ws rotate)
+		name = strings.Trim(name, "'")
+		if !strings.HasPrefix(name, "ws ") {
+			keepPaths = append(keepPaths, p)
+		}
+	}
+
+	// Add new ws keybindings in fresh slots
+	allPaths := keepPaths
 	for _, kb := range bindings {
 		slot := 0
-		for strings.Contains(existing, fmt.Sprintf("custom%d", slot)) || containsSlot(newPaths, slot) {
+		for containsSlot(allPaths, slot) {
 			slot++
 		}
 
@@ -75,25 +93,34 @@ func applyKeybindings(bindings []config.Keybinding) error {
 			return fmt.Errorf("setting binding for %s: %w", kb.Command, err)
 		}
 
-		newPaths = append(newPaths, slotPath)
+		allPaths = append(allPaths, slotPath)
 	}
 
-	var newList string
-	if existing == "@as []" {
-		parts := make([]string, len(newPaths))
-		for i, p := range newPaths {
-			parts[i] = "'" + p + "'"
-		}
-		newList = "[" + strings.Join(parts, ", ") + "]"
-	} else {
-		trimmed := strings.TrimSuffix(existing, "]")
-		parts := make([]string, len(newPaths))
-		for i, p := range newPaths {
-			parts[i] = "'" + p + "'"
-		}
-		newList = trimmed + ", " + strings.Join(parts, ", ") + "]"
+	// Write the combined list back
+	parts := make([]string, len(allPaths))
+	for i, p := range allPaths {
+		parts[i] = "'" + p + "'"
 	}
+	newList := "[" + strings.Join(parts, ", ") + "]"
 	return gsettingsSet(schema, "custom-keybindings", newList)
+}
+
+func parseGsettingsList(raw string) []string {
+	if raw == "@as []" || raw == "[]" {
+		return nil
+	}
+	// Format: ['/path/custom0/', '/path/custom1/']
+	raw = strings.TrimPrefix(raw, "[")
+	raw = strings.TrimSuffix(raw, "]")
+	var paths []string
+	for _, part := range strings.Split(raw, ",") {
+		p := strings.TrimSpace(part)
+		p = strings.Trim(p, "'")
+		if p != "" {
+			paths = append(paths, p)
+		}
+	}
+	return paths
 }
 
 func containsSlot(paths []string, slot int) bool {

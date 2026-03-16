@@ -10,87 +10,61 @@ import (
 	"github.com/skarlsson/workshell/internal/monitor"
 	"github.com/skarlsson/workshell/internal/ssh"
 	"github.com/skarlsson/workshell/internal/state"
+	"github.com/skarlsson/workshell/internal/wm"
 	"github.com/spf13/cobra"
 )
 
 // bringToFront moves a workspace to the work monitor, restoring the previously
-// focused workspace to its home position (multi mode) or minimizing others (single mode).
+// bringToFront focuses a workspace window:
+//   - Restores previous workspace to its saved position, then minimizes it
+//   - Saves target's current position, moves it to focus monitor (if multi-monitor), activates it
 func bringToFront(name string) error {
 	cfg, err := config.LoadGlobalConfig()
 	if err != nil {
 		return err
 	}
 
-	winID, err := kitty.PlatformWindowID(name)
-	if err != nil {
-		return err
-	}
-
-	mode := cfg.FocusMode
-	if mode == "" {
-		mode = "multi"
-	}
-
+	mgr := wm.Default()
 	prev := state.LoadFocused()
 
-	// Move previous workspace away
+	// Determine focus target coordinates (only with multiple monitors)
+	var focusX, focusY int
+	var hasFocusPos bool
+	monitors, _ := monitor.ListMonitors()
+	if len(monitors) > 1 && cfg.WorkMonitor != "" {
+		if mon, err := monitor.GetMonitor(cfg.WorkMonitor); err == nil {
+			focusX, focusY = mon.X+50, mon.Y+50
+			hasFocusPos = true
+		}
+	}
+
+	// 1. Save previous workspace's current position as home (captures any
+	//    manual moves since it was focused), then minimize it
 	if prev != "" && prev != name {
 		prevSt, err := state.Load(prev)
 		if err == nil && prevSt.Active && kitty.IsAlive(prev, prevSt.KittyPID) {
-			prevWinID, err := kitty.PlatformWindowID(prev)
-			if err == nil {
-				if mode == "single" {
-					monitor.MinimizeWindow(prevWinID)
-				} else if prevSt.HomeCaptured {
-					monitor.MoveWindow(prevWinID, prevSt.HomeX, prevSt.HomeY)
-				}
+			prevSt.HomeMaximized = mgr.IsMaximized(prev)
+			if x, y, err := mgr.GetPosition(prev); err == nil {
+				prevSt.HomeX = x
+				prevSt.HomeY = y
+				prevSt.HomeCaptured = true
+				state.Save(prevSt)
 			}
+			mgr.Minimize(prev)
 		}
 	}
 
-	if mode == "single" {
-		// Minimize remaining active workspaces
-		active, _ := state.ListActive()
-		for _, other := range active {
-			if other.Name == name || other.Name == prev || !kitty.IsAlive(other.Name, other.KittyPID) {
-				continue
-			}
-			otherWinID, err := kitty.PlatformWindowID(other.Name)
-			if err == nil {
-				monitor.MinimizeWindow(otherWinID)
-			}
-		}
+	// 3. Move target to focus position (multi-monitor only)
+	if hasFocusPos {
+		mgr.Move(name, focusX, focusY)
 	}
 
-	// Move target to saved focus position, or fall back to work monitor origin
-	var moveX, moveY int
-	focusPos := state.LoadFocusPosition()
-	if focusPos.Captured {
-		moveX, moveY = focusPos.X, focusPos.Y
-	} else if cfg.WorkMonitor != "" {
-		mon, err := monitor.GetMonitor(cfg.WorkMonitor)
-		if err == nil {
-			moveX, moveY = mon.X, mon.Y
-		}
-	}
-	monitor.MoveWindow(winID, moveX, moveY)
-	state.SaveFocusPosition(moveX, moveY)
-
-	// Calibrate the coordinate offset (getwindowgeometry vs windowmove)
-	// so that ws capture can convert read coords to move coords
-	if !focusPos.Calibrated {
-		dx, dy := monitor.CalibrateOffset(winID, moveX, moveY)
-		state.SaveFocusOffset(dx, dy)
-	}
-
-	// Activate
-	if err := monitor.ActivateWindow(winID); err != nil {
+	// 4. Activate (also unminimizes if needed)
+	if err := mgr.Activate(name); err != nil {
 		return err
 	}
 
-	// Refresh window title with current branch
 	refreshTitle(name)
-
 	state.SaveFocused(name)
 	return nil
 }
@@ -100,6 +74,8 @@ func refreshTitle(name string) {
 	if err != nil {
 		return
 	}
+
+	mgr := wm.Default()
 
 	if st.Remote {
 		// Remote workspace — title includes host, and branch comes from remote
@@ -122,7 +98,7 @@ func refreshTitle(name string) {
 				}
 			}
 		}
-		kitty.SetTitle(name, title)
+		mgr.SetTitle(name, title)
 		return
 	}
 
@@ -136,7 +112,7 @@ func refreshTitle(name string) {
 			title = fmt.Sprintf("ws: %s [%s]", name, branch)
 		}
 	}
-	kitty.SetTitle(name, title)
+	mgr.SetTitle(name, title)
 }
 
 var rotateCmd = &cobra.Command{
@@ -211,22 +187,15 @@ var unfocusCmd = &cobra.Command{
 			return fmt.Errorf("workspace %q is no longer running", name)
 		}
 
-		if !st.HomeCaptured {
-			fmt.Printf("Workspace %q has no saved home position. Run 'ws capture' first.\n", name)
-			return nil
-		}
+		mgr := wm.Default()
 
-		winID, err := kitty.PlatformWindowID(name)
-		if err != nil {
-			return err
+		if st.HomeCaptured {
+			mgr.Move(name, st.HomeX, st.HomeY)
 		}
-
-		if err := monitor.MoveWindow(winID, st.HomeX, st.HomeY); err != nil {
-			return fmt.Errorf("moving %q home: %w", name, err)
-		}
+		mgr.Minimize(name)
 
 		state.SaveFocused("")
-		fmt.Printf("Sent workspace %q back home\n", name)
+		fmt.Printf("Unfocused workspace %q\n", name)
 		return nil
 	},
 }

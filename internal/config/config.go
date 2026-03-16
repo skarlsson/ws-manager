@@ -18,7 +18,6 @@ type GlobalConfig struct {
 	DefaultShell     string            `yaml:"default_shell"`
 	MonitorMapping   map[string]string `yaml:"monitor_mapping,omitempty"`
 	WorkMonitor      string            `yaml:"work_monitor"`
-	FocusMode        string            `yaml:"focus_mode"` // "multi" (move+restore) or "single" (minimize others)
 	WorkspaceBaseDir string            `yaml:"workspace_base_dir,omitempty"`
 	Keybindings      []Keybinding      `yaml:"keybindings,omitempty"`
 }
@@ -35,7 +34,6 @@ func DefaultGlobalConfig() GlobalConfig {
 	return GlobalConfig{
 		DefaultLayout:    "default",
 		DefaultShell:     "bash",
-		FocusMode:        "multi",
 		WorkspaceBaseDir: filepath.Join(home, "dev"),
 	}
 }

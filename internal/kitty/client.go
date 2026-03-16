@@ -5,13 +5,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"time"
 	"os/exec"
-	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/skarlsson/workshell/internal/deps"
+	"time"
 )
 
 func SocketPath(wsName string) string {
@@ -35,7 +32,7 @@ type kittyOSWindow struct {
 	Tabs           []kittyTab `json:"tabs"`
 }
 
-func remoteCmd(socket string, args ...string) (string, error) {
+func RemoteCmd(socket string, args ...string) (string, error) {
 	fullArgs := append([]string{"@", "--to", "unix:" + socket}, args...)
 	cmd := exec.Command("kitty", fullArgs...)
 	out, err := cmd.CombinedOutput()
@@ -110,7 +107,7 @@ func Launch(wsName, cwd, title string) (int, error) {
 // PlatformWindowID returns the X11/XWayland window ID for a workspace's kitty instance.
 func PlatformWindowID(wsName string) (int, error) {
 	socket := SocketPath(wsName)
-	out, err := remoteCmd(socket, "ls")
+	out, err := RemoteCmd(socket, "ls")
 	if err != nil {
 		return 0, err
 	}
@@ -124,46 +121,12 @@ func PlatformWindowID(wsName string) (int, error) {
 	return osWindows[0].PlatformWinID, nil
 }
 
-// Activate raises and focuses a workspace's kitty window using xdotool.
-func Activate(wsName string) error {
-	if !deps.HasTool("xdotool") {
-		return fmt.Errorf("xdotool not found in PATH (required for window activation)")
-	}
-	winID, err := PlatformWindowID(wsName)
-	if err != nil {
-		return err
-	}
-	cmd := exec.Command("xdotool", "windowactivate", strconv.Itoa(winID))
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("xdotool windowactivate: %w\n%s", err, string(out))
-	}
-	return nil
-}
 
 func SendText(socket string, text string) error {
-	_, err := remoteCmd(socket, "send-text", text)
+	_, err := RemoteCmd(socket, "send-text", text)
 	return err
 }
 
-// SetTitle sets the OS window title for a workspace's kitty instance
-// by setting _NET_WM_NAME via xprop (zellij intercepts escape sequences).
-// Silently skips if xprop is not available (cosmetic feature).
-func SetTitle(wsName, title string) error {
-	if !deps.HasTool("xprop") {
-		return nil
-	}
-	winID, err := PlatformWindowID(wsName)
-	if err != nil {
-		return err
-	}
-	id := strconv.Itoa(winID)
-	out, err := exec.Command("xprop", "-id", id, "-f", "_NET_WM_NAME", "8u", "-set", "_NET_WM_NAME", title).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("xprop set _NET_WM_NAME: %w\n%s", err, string(out))
-	}
-	return nil
-}
 
 // LaunchRemote starts a new kitty instance for a remote workspace (no --directory).
 // Returns the PID of the kitty process.
