@@ -86,18 +86,16 @@ func ensureLocalBinInPath() []string {
 }
 
 func findZellij() (string, error) {
-	// Check common locations
+	home, _ := os.UserHomeDir()
+
+	// Check common locations including user-local installs
 	paths := []string{
-		"/usr/bin/zellij",
+		filepath.Join(home, ".local", "bin", "zellij"),
+		filepath.Join(home, ".cargo", "bin", "zellij"),
 		"/usr/local/bin/zellij",
+		"/usr/bin/zellij",
 	}
 
-	// Try PATH first
-	if p, err := os.Readlink("/proc/self/exe"); err == nil {
-		_ = p // just checking we can resolve
-	}
-
-	// Check each known path
 	for _, p := range paths {
 		if _, err := os.Stat(p); err == nil {
 			return p, nil
@@ -105,18 +103,17 @@ func findZellij() (string, error) {
 	}
 
 	// Fall back to PATH lookup
-	// We need to search PATH manually since exec.LookPath won't work after syscall.Exec
 	pathEnv := os.Getenv("PATH")
 	if pathEnv != "" {
 		for _, dir := range splitPath(pathEnv) {
-			candidate := dir + "/zellij"
+			candidate := filepath.Join(dir, "zellij")
 			if _, err := os.Stat(candidate); err == nil {
 				return candidate, nil
 			}
 		}
 	}
 
-	return "", fmt.Errorf("zellij not found in PATH")
+	return "", fmt.Errorf("zellij not found — checked ~/.local/bin, ~/.cargo/bin, and PATH")
 }
 
 func splitPath(path string) []string {
