@@ -42,12 +42,14 @@ var attachCmd = &cobra.Command{
 		env := ensureLocalBinInPath()
 
 		if zellij.SessionExists(session) {
-			fmt.Printf("Attaching to existing session %q...\n", session)
-			return syscall.Exec(zellijBin, []string{"zellij", "attach", session}, env)
+			if !zellij.CleanupDeadSession(session) {
+				// Session is alive — attach to it, preserving running programs
+				fmt.Printf("Attaching to existing session %q...\n", session)
+				return syscall.Exec(zellijBin, []string{"zellij", "attach", session}, env)
+			}
+			// Dead session was cleaned up — fall through to create
 		}
 
-		// Clean up any dead session with the same name, then create new
-		zellij.CleanupSession(session)
 		fmt.Printf("Creating session %q with layout...\n", session)
 		return syscall.Exec(zellijBin, []string{"zellij", "-s", session, "-n", layoutPath}, env)
 	},

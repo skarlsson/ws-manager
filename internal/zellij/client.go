@@ -63,6 +63,42 @@ func CleanupSession(name string) {
 	_ = DeleteSession(name)
 }
 
+// CleanupDeadSession only removes a session if it's in EXITED state.
+// Returns true if the session was cleaned up or didn't exist.
+func CleanupDeadSession(name string) bool {
+	alive, exists := sessionStatus(name)
+	if !exists {
+		return true
+	}
+	if alive {
+		return false
+	}
+	// Session is exited — safe to delete
+	_ = DeleteSession(name)
+	return true
+}
+
+// sessionStatus returns (alive, exists) for a named session.
+func sessionStatus(name string) (alive bool, exists bool) {
+	out, err := run("list-sessions", "--no-formatting")
+	if err != nil {
+		return false, false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		// Lines look like: "ws-foo [Created ...] (EXITED - attach to resurrect)"
+		// or: "ws-foo [Created ...]" (alive)
+		sessionName := strings.Fields(line)
+		if len(sessionName) == 0 {
+			continue
+		}
+		if sessionName[0] != name {
+			continue
+		}
+		return !strings.Contains(line, "EXITED"), true
+	}
+	return false, false
+}
+
 func SessionExists(name string) bool {
 	sessions, err := ListSessions()
 	if err != nil {
