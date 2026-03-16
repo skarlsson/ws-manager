@@ -19,7 +19,8 @@ type ToolStatus struct {
 	Found    bool
 	Path     string
 	Note     string
-	Remote   bool // needed on remote side
+	Remote   bool   // needed on remote side
+	Category string // "core", "x11", "wayland"
 }
 
 type toolDef struct {
@@ -41,6 +42,17 @@ var tools = []toolDef{
 	{"xprop", true, "window title updates (X11)", false, true, false},
 	{"gdbus", true, "monitor/window management (GNOME/Wayland)", false, false, false},
 	{"window-calls", true, "window management extension (Wayland)", false, false, true},
+}
+
+// SessionType returns a human-readable string for the detected display session.
+func SessionType() string {
+	if isHeadless() {
+		return "headless"
+	}
+	if isWayland() {
+		return "wayland"
+	}
+	return "x11"
 }
 
 // CheckAll returns the status of all required and optional tools.
@@ -81,11 +93,18 @@ func checkTools(remoteOnly bool) []ToolStatus {
 		if t.WaylandOnly && !wayland {
 			continue
 		}
+		cat := "core"
+		if t.X11Only {
+			cat = "x11"
+		} else if t.WaylandOnly {
+			cat = "wayland"
+		}
 		ts := ToolStatus{
 			Name:     t.Name,
 			Required: t.Required,
 			Note:     t.Note,
 			Remote:   t.Remote,
+			Category: cat,
 		}
 		if t.Name == "kitty-terminfo" {
 			ts.Found = hasKittyTerminfo()

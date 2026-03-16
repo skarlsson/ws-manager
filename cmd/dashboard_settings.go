@@ -812,47 +812,40 @@ func (m settingsModel) View() string {
 
 	case stepDeps:
 		b.WriteString(titleStyle.Render("Dependencies"))
+		b.WriteString(normalStyle.Render(fmt.Sprintf("  (session: %s)", deps.SessionType())))
 		b.WriteString("\n\n")
-		var required, optional []deps.ToolStatus
-		for _, ts := range m.depStatuses {
-			if ts.Required {
-				required = append(required, ts)
-			} else {
-				optional = append(optional, ts)
-			}
+		type catDef struct {
+			key, label string
 		}
-		if len(required) > 0 {
-			b.WriteString(normalStyle.Render("  Required:"))
+		for _, cat := range []catDef{{"core", "Core"}, {"x11", "X11"}, {"wayland", "Wayland"}} {
+			var items []deps.ToolStatus
+			for _, ts := range m.depStatuses {
+				if ts.Category == cat.key {
+					items = append(items, ts)
+				}
+			}
+			if len(items) == 0 {
+				continue
+			}
+			b.WriteString(normalStyle.Render(fmt.Sprintf("  %s:", cat.label)))
 			b.WriteString("\n")
-			for _, ts := range required {
+			for _, ts := range items {
 				if ts.Found {
 					path := ts.Path
 					if path == "" {
 						path = "found"
 					}
-					b.WriteString(successStyle.Render(fmt.Sprintf("    ✓ %-16s %s", ts.Name, path)))
+					b.WriteString(successStyle.Render(fmt.Sprintf("    ✓ %-18s %s", ts.Name, path)))
 				} else {
-					b.WriteString(errorStyle.Render(fmt.Sprintf("    ✗ %-16s (not found)", ts.Name)))
-				}
-				b.WriteString("\n")
-			}
-		}
-		if len(optional) > 0 {
-			b.WriteString("\n")
-			b.WriteString(normalStyle.Render("  Optional:"))
-			b.WriteString("\n")
-			for _, ts := range optional {
-				if ts.Found {
-					path := ts.Path
-					if path == "" {
-						path = "found"
+					if ts.Required {
+						b.WriteString(errorStyle.Render(fmt.Sprintf("    ✗ %-18s (not found)", ts.Name)))
+					} else {
+						b.WriteString(inactiveStyle.Render(fmt.Sprintf("    ✗ %-18s (not found)", ts.Name)))
 					}
-					b.WriteString(successStyle.Render(fmt.Sprintf("    ✓ %-16s %s", ts.Name, path)))
-				} else {
-					b.WriteString(inactiveStyle.Render(fmt.Sprintf("    ✗ %-16s (not found)", ts.Name)))
 				}
 				b.WriteString("\n")
 			}
+			b.WriteString("\n")
 		}
 		b.WriteString("\n")
 		if m.message != "" {
