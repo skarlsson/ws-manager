@@ -1,7 +1,6 @@
 package deps
 
 import (
-	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,9 +8,6 @@ import (
 	"runtime"
 	"strings"
 )
-
-//go:embed embed/window-calls.zip
-var windowCallsZip []byte
 
 type ToolStatus struct {
 	Name     string
@@ -338,19 +334,22 @@ func installWindowCalls() error {
 		return nil
 	}
 
-	// Write embedded zip to temp file
+	// Download extension zip from extensions.gnome.org
+	url := "https://extensions.gnome.org/extension-data/window-callsdomandoman.xyz.v20.shell-extension.zip"
 	tmpFile, err := os.CreateTemp("", "window-calls-*.zip")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %w", err)
 	}
 	tmpPath := tmpFile.Name()
+	tmpFile.Close()
 	defer os.Remove(tmpPath)
 
-	if _, err := tmpFile.Write(windowCallsZip); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("writing extension zip: %w", err)
+	dl := exec.Command("curl", "-fsSL", "-L", "-o", tmpPath, url)
+	dl.Stdout = os.Stdout
+	dl.Stderr = os.Stderr
+	if err := dl.Run(); err != nil {
+		return fmt.Errorf("downloading window-calls extension: %w", err)
 	}
-	tmpFile.Close()
 
 	install := exec.Command("gnome-extensions", "install", "--force", tmpPath)
 	install.Stdout = os.Stdout
