@@ -14,10 +14,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bringToFront moves a workspace to the work monitor, restoring the previously
-// bringToFront focuses a workspace window:
-//   - Restores previous workspace to its saved position, then minimizes it
-//   - Saves target's current position, moves it to focus monitor (if multi-monitor), activates it
+// bringToFront focuses a workspace window.
+//
+// Multi-monitor (WorkMonitor configured + >1 monitor):
+//   - Capture previous workspace's position as home (before it was moved to work monitor)
+//   - Move previous back to its home position (stays visible on its own monitor)
+//   - Capture target's current position as home, move it to work monitor, activate
+//
+// Single monitor:
+//   - Minimize previous workspace
+//   - Activate target (unminimizes it)
 func bringToFront(name string) error {
 	cfg, err := config.LoadGlobalConfig()
 	if err != nil {
@@ -27,39 +33,53 @@ func bringToFront(name string) error {
 	mgr := wm.Default()
 	prev := state.LoadFocused()
 
-	// Determine focus target coordinates (only with multiple monitors)
+	// Determine if we're in multi-monitor mode
 	var focusX, focusY int
-	var hasFocusPos bool
+	multiMonitor := false
 	monitors, _ := monitor.ListMonitors()
 	if len(monitors) > 1 && cfg.WorkMonitor != "" {
 		if mon, err := monitor.GetMonitor(cfg.WorkMonitor); err == nil {
 			focusX, focusY = mon.X+50, mon.Y+50
-			hasFocusPos = true
+			multiMonitor = true
 		}
 	}
 
-	// 1. Save previous workspace's current position as home (captures any
-	//    manual moves since it was focused), then minimize it
+	// 1. Handle previous workspace
 	if prev != "" && prev != name {
 		prevSt, err := state.Load(prev)
 		if err == nil && prevSt.Active && kitty.IsAlive(prev, prevSt.KittyPID) {
-			prevSt.HomeMaximized = mgr.IsMaximized(prev)
-			if x, y, err := mgr.GetPosition(prev); err == nil {
-				prevSt.HomeX = x
-				prevSt.HomeY = y
-				prevSt.HomeCaptured = true
-				state.Save(prevSt)
+			if multiMonitor && prevSt.HomeCaptured {
+				// Multi-monitor: move previous back to its home position (visible on its own monitor)
+				mgr.Move(prev, prevSt.HomeX, prevSt.HomeY)
+				if prevSt.HomeMaximized {
+					mgr.Maximize(prev)
+				}
+			} else {
+				// Single monitor: minimize to get it out of the way
+				mgr.Minimize(prev)
 			}
-			mgr.Minimize(prev)
 		}
 	}
 
-	// 3. Move target to focus position (multi-monitor only)
-	if hasFocusPos {
+	// 2. Capture target's current position as home before moving it.
+	//    The target is on its home monitor right now — save that position
+	//    so we can restore it when rotating away.
+	if multiMonitor {
+		targetSt, err := state.Load(name)
+		if err == nil {
+			targetSt.HomeMaximized = mgr.IsMaximized(name)
+			if x, y, err := mgr.GetPosition(name); err == nil {
+				targetSt.HomeX = x
+				targetSt.HomeY = y
+				targetSt.HomeCaptured = true
+				state.Save(targetSt)
+			}
+		}
+		// Move target to work monitor
 		mgr.Move(name, focusX, focusY)
 	}
 
-	// 4. Activate (also unminimizes if needed)
+	// 3. Activate (also unminimizes on single monitor)
 	if err := mgr.Activate(name); err != nil {
 		return err
 	}
@@ -181,6 +201,7 @@ var unfocusCmd = &cobra.Command{
 			return nil
 		}
 
+		cfg, _ := config.LoadGlobalConfig()
 		st, err := state.Load(name)
 		if err != nil || !st.Active || !kitty.IsAlive(name, st.KittyPID) {
 			state.SaveFocused("")
@@ -189,10 +210,23 @@ var unfocusCmd = &cobra.Command{
 
 		mgr := wm.Default()
 
-		if st.HomeCaptured {
-			mgr.Move(name, st.HomeX, st.HomeY)
+		// Check if multi-monitor
+		multiMonitor := false
+		monitors, _ := monitor.ListMonitors()
+		if len(monitors) > 1 && cfg.WorkMonitor != "" {
+			multiMonitor = true
 		}
-		mgr.Minimize(name)
+
+		if multiMonitor && st.HomeCaptured {
+			// Multi-monitor: move back to home position (stays visible)
+			mgr.Move(name, st.HomeX, st.HomeY)
+			if st.HomeMaximized {
+				mgr.Maximize(name)
+			}
+		} else {
+			// Single monitor: minimize
+			mgr.Minimize(name)
+		}
 
 		state.SaveFocused("")
 		fmt.Printf("Unfocused workspace %q\n", name)
