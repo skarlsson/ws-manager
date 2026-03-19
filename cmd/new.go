@@ -110,6 +110,13 @@ var newCmd = &cobra.Command{
 		autoClaudeStr := prompt("Auto-start claude in left pane? (y/n)", "y")
 		autoClaude := strings.ToLower(autoClaudeStr) == "y" || strings.ToLower(autoClaudeStr) == "yes"
 
+		// 5b. Claude auth mode
+		claudeAuthStr := prompt("Claude auth mode (default/anthropic)", "default")
+		claudeAuth := ""
+		if strings.ToLower(claudeAuthStr) == "anthropic" {
+			claudeAuth = "anthropic"
+		}
+
 		// 6. Setup commands
 		fmt.Println("Setup commands (one per line, empty line to finish):")
 		var setupCmds []string
@@ -131,6 +138,7 @@ var newCmd = &cobra.Command{
 			DefaultBranch: defaultBranch,
 			Layout:        layout,
 			AutoClaude:    autoClaude,
+			ClaudeAuth:    claudeAuth,
 			SetupCommands: setupCmds,
 		}
 

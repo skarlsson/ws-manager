@@ -23,6 +23,7 @@ const (
 	stepInputDir
 	stepSelectBranch
 	stepInputName
+	stepSelectAuth
 	stepConfirm
 	stepCreating
 )
@@ -65,6 +66,10 @@ type newWSModel struct {
 	branchCursor   int
 	selectedBranch string
 	wsName         string
+
+	// Claude auth
+	authCursor int
+	claudeAuth string // "" or "anthropic"
 
 	baseDir   string
 	message   string
@@ -261,9 +266,10 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			dir = strings.TrimSuffix(dir, "/")
 			m.repoDir = dir
 			m.message = ""
-			// If name already set (new repo flow: name → dir), go to confirm
+			// If name already set (new repo flow: name → dir), go to auth
 			if m.wsName != "" {
-				m.step = stepConfirm
+				m.step = stepSelectAuth
+				m.authCursor = 0
 				return m, nil
 			}
 			// Otherwise derive name from dir (git clone / existing folder flow)
@@ -325,12 +331,33 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 				m.step = stepInputDir
 				return m, textinput.Blink
 			}
-			m.step = stepConfirm
+			m.step = stepSelectAuth
+			m.authCursor = 0
 			return m, nil
 		}
 		var cmd tea.Cmd
 		m.nameInput, cmd = m.nameInput.Update(msg)
 		return m, cmd
+
+	case stepSelectAuth:
+		switch msg.String() {
+		case "down":
+			if m.authCursor < 1 {
+				m.authCursor++
+			}
+		case "up":
+			if m.authCursor > 0 {
+				m.authCursor--
+			}
+		case "enter":
+			if m.authCursor == 0 {
+				m.claudeAuth = ""
+			} else {
+				m.claudeAuth = "anthropic"
+			}
+			m.step = stepConfirm
+		}
+		return m, nil
 
 	case stepConfirm:
 		if msg.String() == "enter" {
@@ -379,6 +406,7 @@ func (m newWSModel) doSetup() tea.Cmd {
 	projType := m.projType
 	branch := m.selectedBranch
 	hostName := m.hostName
+	claudeAuth := m.claudeAuth
 
 	return func() tea.Msg {
 		if hostName != "" {
@@ -432,6 +460,7 @@ func (m newWSModel) doSetup() tea.Cmd {
 			DefaultBranch: defaultBranch,
 			Layout:        "default",
 			AutoClaude:    true,
+			ClaudeAuth:    claudeAuth,
 		}
 		if err := config.SaveWorkspace(ws); err != nil {
 			return setupDoneMsg{err: fmt.Errorf("save: %w", err)}
@@ -574,6 +603,19 @@ func (m newWSModel) View() string {
 		b.WriteString(m.nameInput.View())
 		b.WriteString("\n")
 
+	case stepSelectAuth:
+		b.WriteString(normalStyle.Render("  Claude authentication:"))
+		b.WriteString("\n\n")
+		authOpts := []string{"Default (inherit environment)", "Anthropic (OAuth, strips corporate env)"}
+		for i, opt := range authOpts {
+			if i == m.authCursor {
+				b.WriteString(selectedStyle.Render(fmt.Sprintf("  > %s", opt)))
+			} else {
+				b.WriteString(normalStyle.Render(fmt.Sprintf("    %s", opt)))
+			}
+			b.WriteString("\n")
+		}
+
 	case stepConfirm:
 		b.WriteString(normalStyle.Render("  Review:"))
 		b.WriteString("\n")
@@ -593,6 +635,12 @@ func (m newWSModel) View() string {
 			b.WriteString(normalStyle.Render(fmt.Sprintf("    Branch: %s", m.selectedBranch)))
 			b.WriteString("\n")
 		}
+		authLabel := "Default"
+		if m.claudeAuth == "anthropic" {
+			authLabel = "Anthropic (OAuth)"
+		}
+		b.WriteString(normalStyle.Render(fmt.Sprintf("    Auth:   %s", authLabel)))
+		b.WriteString("\n")
 		b.WriteString("\n")
 		b.WriteString(helpStyle.Render("  Enter: create  Esc: cancel"))
 		b.WriteString("\n")

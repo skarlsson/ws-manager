@@ -18,7 +18,8 @@ type Workspace struct {
 	AutoClaude    bool     `yaml:"auto_claude"`
 	SetupCommands []string `yaml:"setup_commands,omitempty"`
 	Skills        []string `yaml:"skills,omitempty"`
-	Host          string   `yaml:"host,omitempty"` // references hosts.yaml entry for remote workspaces
+	Host          string   `yaml:"host,omitempty"`      // references hosts.yaml entry for remote workspaces
+	ClaudeAuth    string   `yaml:"claude_auth,omitempty"` // "anthropic" strips corporate env vars; empty/"default" uses inherited env
 }
 
 func (w Workspace) IsRemote() bool { return w.Host != "" }

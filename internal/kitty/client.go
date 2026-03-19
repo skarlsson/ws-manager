@@ -64,9 +64,28 @@ func IsAlive(wsName string, pid int) bool {
 	return IsRunning(pid)
 }
 
+// cleanEnv removes vars that prevent tools like claude from starting.
+// If claudeAuth is "anthropic", sets WS_CLAUDE_AUTH=anthropic so that
+// shell startup files (.bashrc) can skip corporate env vars.
+func cleanEnv(claudeAuth string) []string {
+	env := os.Environ()
+	result := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "CLAUDECODE=") || strings.HasPrefix(e, "WS_CLAUDE_AUTH=") {
+			continue
+		}
+		result = append(result, e)
+	}
+	if claudeAuth != "" {
+		result = append(result, "WS_CLAUDE_AUTH="+claudeAuth)
+	}
+	return result
+}
+
 // Launch starts a new kitty instance for a workspace.
+// claudeAuth controls Claude authentication: "anthropic" strips corporate env vars.
 // Returns the PID of the kitty process.
-func Launch(wsName, cwd, title string) (int, error) {
+func Launch(wsName, cwd, title, claudeAuth string) (int, error) {
 	socket := SocketPath(wsName)
 	// Remove stale socket from previous instance
 	os.Remove(socket)
@@ -81,17 +100,7 @@ func Launch(wsName, cwd, title string) (int, error) {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
-
-	// Clean environment: remove vars that prevent tools like claude from starting
-	env := os.Environ()
-	cleanEnv := make([]string, 0, len(env))
-	for _, e := range env {
-		if strings.HasPrefix(e, "CLAUDECODE=") {
-			continue
-		}
-		cleanEnv = append(cleanEnv, e)
-	}
-	cmd.Env = cleanEnv
+	cmd.Env = cleanEnv(claudeAuth)
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("starting kitty: %w", err)
@@ -129,8 +138,9 @@ func SendText(socket string, text string) error {
 
 
 // LaunchRemote starts a new kitty instance for a remote workspace (no --directory).
+// claudeAuth controls Claude authentication: "anthropic" strips corporate env vars.
 // Returns the PID of the kitty process.
-func LaunchRemote(wsName, title string) (int, error) {
+func LaunchRemote(wsName, title, claudeAuth string) (int, error) {
 	socket := SocketPath(wsName)
 	// Remove stale socket from previous instance
 	os.Remove(socket)
@@ -144,16 +154,7 @@ func LaunchRemote(wsName, title string) (int, error) {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
-
-	env := os.Environ()
-	cleanEnv := make([]string, 0, len(env))
-	for _, e := range env {
-		if strings.HasPrefix(e, "CLAUDECODE=") {
-			continue
-		}
-		cleanEnv = append(cleanEnv, e)
-	}
-	cmd.Env = cleanEnv
+	cmd.Env = cleanEnv(claudeAuth)
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("starting kitty: %w", err)

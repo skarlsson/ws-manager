@@ -91,6 +91,7 @@ type dashboardModel struct {
 	quitting   bool
 	confirming confirmAction
 	creating   *newWSModel
+	editing    *editWSModel
 	tasking    *taskModel
 	settings   *settingsModel
 }
@@ -193,8 +194,12 @@ func (m *dashboardModel) refresh() {
 		} else {
 			session := zellij.SessionName(ws.Name)
 			if zellij.SessionExists(session) {
-				entry.state.Active = true
-				claudeLookups = append(claudeLookups, claudeLookup{idx: len(m.entries), session: session})
+				if kitty.IsAlive(sk, st.KittyPID) {
+					entry.state.Active = true
+					claudeLookups = append(claudeLookups, claudeLookup{idx: len(m.entries), session: session})
+				}
+				// Zellij session exists but kitty dead — show as inactive
+				// (user can still open it, which will reattach to the zellij session)
 			}
 		}
 		m.entries = append(m.entries, entry)
@@ -306,6 +311,26 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Delegate to edit-workspace flow when active
+	if m.editing != nil {
+		sub := *m.editing
+		var cmd tea.Cmd
+		sub, cmd = sub.Update(msg)
+		if sub.cancelled {
+			m.editing = nil
+			m.setMsg(normalStyle, "Cancelled")
+			return m, nil
+		}
+		if sub.done {
+			m.editing = nil
+			m.refresh()
+			m.setMsg(successStyle, "Saved workspace settings")
+			return m, nil
+		}
+		m.editing = &sub
+		return m, cmd
+	}
+
 	// Delegate to task flow when active
 	if m.tasking != nil {
 		sub := *m.tasking
@@ -407,11 +432,13 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			esk := e.sk()
 			eref := e.ref()
 			if kitty.IsAlive(esk, e.state.KittyPID) {
-				// Kitty already running — focus it
-				if err := bringToFront(esk); err != nil {
-					m.setMsg(errorStyle, "Focus failed: %v", err)
-				} else {
-					m.setMsg(successStyle, "Focused %s", eref)
+				// Kitty already running — focus it (async to avoid blocking TUI)
+				m.setMsg(normalStyle, "Focusing %s...", eref)
+				return m, func() tea.Msg {
+					if err := bringToFront(esk); err != nil {
+						return openDoneMsg{name: eref, err: fmt.Errorf("focus: %w", err)}
+					}
+					return openDoneMsg{name: eref}
 				}
 			} else if !e.ws.IsRemote() && zellij.SessionExists(zellij.SessionName(e.ws.Name)) && !deps.HasTool("kitty") {
 				// No kitty available (e.g. on remote server) — attach directly in this terminal
@@ -429,6 +456,15 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return openDoneMsg{name: eref, err: err}
 				}
 			}
+
+		case key.Matches(msg, key.NewBinding(key.WithKeys("e"))):
+			e, ok := m.selected()
+			if !ok {
+				break
+			}
+			sub := newEditWSModel(e.ws)
+			m.editing = &sub
+			return m, sub.Init()
 
 		case key.Matches(msg, key.NewBinding(key.WithKeys("d"))):
 			e, ok := m.selected()
@@ -527,6 +563,10 @@ func (m dashboardModel) View() string {
 
 	if m.creating != nil {
 		return m.creating.View()
+	}
+
+	if m.editing != nil {
+		return m.editing.View()
 	}
 
 	if m.tasking != nil {
@@ -714,7 +754,7 @@ func (m dashboardModel) View() string {
 		b.WriteString("  " + m.msgStyle.Render(m.message) + "\n")
 	}
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: open  n: new  t: tasks  d: detach  x: kill  D: delete  s: settings  Esc: quit"))
+	b.WriteString(helpStyle.Render("  ↑/↓: navigate  Enter: open  n: new  e: edit  t: tasks  d: detach  x: kill  D: delete  s: settings  Esc: quit"))
 	b.WriteString("\n")
 
 	return b.String()

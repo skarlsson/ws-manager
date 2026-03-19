@@ -49,33 +49,32 @@ func bringToFront(name string) error {
 		prevSt, err := state.Load(prev)
 		if err == nil && prevSt.Active && kitty.IsAlive(prev, prevSt.KittyPID) {
 			if multiMonitor && prevSt.HomeCaptured {
-				// Multi-monitor: move previous back to its home position (visible on its own monitor)
 				mgr.Move(prev, prevSt.HomeX, prevSt.HomeY)
 				if prevSt.HomeMaximized {
 					mgr.Maximize(prev)
 				}
 			} else {
-				// Single monitor: minimize to get it out of the way
 				mgr.Minimize(prev)
 			}
 		}
 	}
 
 	// 2. Capture target's current position as home before moving it.
-	//    The target is on its home monitor right now — save that position
-	//    so we can restore it when rotating away.
+	//    Only capture when switching workspaces — if re-focusing the same one,
+	//    it's already on the work monitor so its position isn't "home".
 	if multiMonitor {
-		targetSt, err := state.Load(name)
-		if err == nil {
-			targetSt.HomeMaximized = mgr.IsMaximized(name)
-			if x, y, err := mgr.GetPosition(name); err == nil {
-				targetSt.HomeX = x
-				targetSt.HomeY = y
-				targetSt.HomeCaptured = true
-				state.Save(targetSt)
+		if prev != name {
+			targetSt, err := state.Load(name)
+			if err == nil {
+				targetSt.HomeMaximized = mgr.IsMaximized(name)
+				if x, y, err := mgr.GetPosition(name); err == nil {
+					targetSt.HomeX = x
+					targetSt.HomeY = y
+					targetSt.HomeCaptured = true
+					state.Save(targetSt)
+				}
 			}
 		}
-		// Move target to work monitor
 		mgr.Move(name, focusX, focusY)
 	}
 

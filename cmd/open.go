@@ -110,7 +110,7 @@ func openLocalWorkspace(name string) error {
 			title = fmt.Sprintf("ws: %s [%s]", name, branch)
 		}
 	}
-	pid, err := kitty.Launch(name, ws.Dir, title)
+	pid, err := kitty.Launch(name, ws.Dir, title, ws.ClaudeAuth)
 	if err != nil {
 		return fmt.Errorf("launching kitty: %w", err)
 	}
@@ -178,7 +178,13 @@ func openRemoteWorkspace(hostName, wsName string) error {
 	if branch != "" {
 		title = fmt.Sprintf("ws: %s [%s] (%s)", wsName, branch, hostName)
 	}
-	pid, err := kitty.LaunchRemote(sk, title)
+	// Check local workspace config for claude_auth setting
+	claudeAuth := ""
+	if ws, err := config.LoadWorkspace(wsName); err == nil {
+		claudeAuth = ws.ClaudeAuth
+	}
+
+	pid, err := kitty.LaunchRemote(sk, title, claudeAuth)
 	if err != nil {
 		return fmt.Errorf("launching kitty: %w", err)
 	}
