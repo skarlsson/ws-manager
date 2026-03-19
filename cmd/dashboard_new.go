@@ -203,7 +203,14 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 				m.urlInput.Focus()
 				return m, textinput.Blink
 			}
-			// Existing folder or new repo: ask for directory
+			if m.projType == projectBlank {
+				// New repo: ask for name first, then derive dir
+				m.nameInput.SetValue("")
+				m.nameInput.Focus()
+				m.step = stepInputName
+				return m, textinput.Blink
+			}
+			// Existing folder: ask for directory first
 			m.dirInput.SetValue(m.defaultBaseDir() + "/")
 			m.dirInput.Focus()
 			m.step = stepInputDir
@@ -254,6 +261,12 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			dir = strings.TrimSuffix(dir, "/")
 			m.repoDir = dir
 			m.message = ""
+			// If name already set (new repo flow: name → dir), go to confirm
+			if m.wsName != "" {
+				m.step = stepConfirm
+				return m, nil
+			}
+			// Otherwise derive name from dir (git clone / existing folder flow)
 			m.step = stepInputName
 			m.nameInput.SetValue(filepath.Base(dir))
 			m.nameInput.Focus()
@@ -305,6 +318,13 @@ func (m newWSModel) handleKey(msg tea.KeyMsg) (newWSModel, tea.Cmd) {
 			}
 			m.wsName = name
 			m.message = ""
+			// New repo: name was asked first, now ask for dir pre-filled with baseDir/name
+			if m.projType == projectBlank && m.repoDir == "" {
+				m.dirInput.SetValue(m.defaultBaseDir() + "/" + name)
+				m.dirInput.Focus()
+				m.step = stepInputDir
+				return m, textinput.Blink
+			}
 			m.step = stepConfirm
 			return m, nil
 		}
